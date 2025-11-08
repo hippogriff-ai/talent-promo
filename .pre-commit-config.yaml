@@ -1,0 +1,32 @@
+repos:
+  # Ruff linter for Python
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.0
+    hooks:
+      # Run the linter
+      - id: ruff
+        args: [--fix]
+        files: ^apps/api/
+      # Run the formatter
+      - id: ruff-format
+        files: ^apps/api/
+
+  # MyPy type checking for Python
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.1
+    hooks:
+      - id: mypy
+        files: ^apps/api/
+        additional_dependencies: [fastapi, pydantic, uvicorn]
+
+  # ESLint for frontend (if needed)
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v8.57.1
+    hooks:
+      - id: eslint
+        files: ^apps/web/
+        types: [file]
+        types_or: [javascript, jsx, ts, tsx]
+        additional_dependencies:
+          - eslint@8.57.1
+          - eslint-config-next

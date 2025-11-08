@@ -1,6 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Note: Using absolute import from routers for compatibility with pytest pythonpath config
+# When running the API, use: cd apps/api && uvicorn main:app --reload
+from routers import research
+
 app = FastAPI(
     title="Talent Promo API",
     description="API for helping talent present themselves",
@@ -15,12 +19,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include routers
+app.include_router(research.router)
+
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, str]:
     return {"message": "Talent Promo API"}
 
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, str]:
     return {"status": "healthy"}

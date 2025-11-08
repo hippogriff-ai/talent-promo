@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Note: Using absolute import from routers for compatibility with pytest pythonpath config
 # When running the API, use: cd apps/api && uvicorn main:app --reload
-from routers import research
+from routers import agents, research
 
 app = FastAPI(
     title="Talent Promo API",
@@ -20,6 +20,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(agents.router)
 app.include_router(research.router)
 
 

@@ -3,13 +3,6 @@
  * Extracts text content from PDF files
  */
 
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Set worker path for pdf.js
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-}
-
 export interface PDFParseResult {
   text: string;
   pageCount: number;
@@ -20,7 +13,18 @@ export interface PDFParseResult {
  * Extracts text from a PDF file
  */
 export async function parsePDF(file: File): Promise<PDFParseResult> {
+  // Only run on client side
+  if (typeof window === 'undefined') {
+    throw new Error('PDF parsing can only be done on the client side');
+  }
+
   try {
+    // Dynamic import to avoid SSR issues
+    const pdfjsLib = await import('pdfjs-dist');
+
+    // Set worker path after loading
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 

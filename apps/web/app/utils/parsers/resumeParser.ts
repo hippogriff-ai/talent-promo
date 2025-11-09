@@ -4,8 +4,6 @@
  */
 
 import type { ParsedResume, PersonalInfo, WorkExperience, Education, Skill, Certification, Project, Language } from '@/app/types/resume';
-import { parsePDF, isPDF } from './pdfParser';
-import { parseDOCX, isDOCX } from './docxParser';
 
 const PARSE_VERSION = '1.0.0';
 
@@ -13,6 +11,17 @@ const PARSE_VERSION = '1.0.0';
  * Main function to parse a resume file
  */
 export async function parseResumeFile(file: File): Promise<ParsedResume> {
+  // Only run on client side
+  if (typeof window === 'undefined') {
+    throw new Error('Resume parsing can only be done on the client side');
+  }
+
+  // Dynamic imports to avoid SSR issues
+  const [{ parsePDF, isPDF }, { parseDOCX, isDOCX }] = await Promise.all([
+    import('./pdfParser'),
+    import('./docxParser')
+  ]);
+
   // Extract raw text based on file type
   let rawText: string;
 

@@ -6,7 +6,7 @@ interface FileUploadProps {
   onUploadComplete?: (fileId: string) => void;
 }
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -24,7 +24,7 @@ export default function FileUpload({ onUploadComplete }: FileUploadProps) {
       return "Only PDF and DOCX files are allowed";
     }
     if (file.size > MAX_FILE_SIZE) {
-      return "File size must be less than 10MB";
+      return "File size must be less than 5MB";
     }
     return null;
   };
@@ -202,7 +202,7 @@ export default function FileUpload({ onUploadComplete }: FileUploadProps) {
       <div className="mt-6 p-4 bg-blue-50 rounded-lg">
         <p className="text-sm text-blue-800">
           <strong>Note:</strong> Your documents will be processed securely. We
-          accept PDF and DOCX files up to 10MB. LinkedIn URL is optional but
+          accept PDF and DOCX files up to 5MB. LinkedIn URL is optional but
           helps us gather additional information.
         </p>
       </div>

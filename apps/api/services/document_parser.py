@@ -7,17 +7,17 @@ import logging
 from typing import Dict
 
 try:
-    from PyPDF2 import PdfReader
+    from PyPDF2 import PdfReader  # type: ignore
 except ImportError:
     PdfReader = None  # type: ignore
 
 try:
-    import pdfplumber
+    import pdfplumber  # type: ignore
 except ImportError:
     pdfplumber = None  # type: ignore
 
 try:
-    from docx import Document
+    from docx import Document  # type: ignore
 except ImportError:
     Document = None  # type: ignore
 

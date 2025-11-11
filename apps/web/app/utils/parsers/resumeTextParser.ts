@@ -494,7 +494,7 @@ function extractProjects(text: string, lines: string[]): Project[] {
     const afterCourse = text.substring(match.index + match[0].length);
     const projectMatch = afterCourse.match(/●\s*Project:\s*([^\n]+)/i);
 
-    if (projectMatch) {
+    if (projectMatch && projectMatch.index !== undefined) {
       const projectTitle = projectMatch[1].trim();
 
       // Extract description bullets after the project title

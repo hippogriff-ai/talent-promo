@@ -294,9 +294,21 @@ class JobScraper:
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'lxml')
 
-            # Try to find common elements
-            title = self._extract_text(soup, ['h1', '.job-title', '[class*="title"]'], "Unknown Title")
-            description = self._extract_text(soup, ['[class*="description"]', '[class*="details"]', 'main'], "")
+            # Extract all text content for better parsing
+            all_text = soup.get_text(separator='\n', strip=True)
+
+            # Try to find title - be more aggressive
+            title = self._extract_title(soup)
+
+            # Extract description from common containers
+            description = self._extract_description(soup, all_text)
+
+            # If title is still unknown, try to extract from description
+            if title == "Unknown Title" and description:
+                title = self._extract_title_from_description(description, url)
+
+            # Try to extract salary from description text
+            salary_range = self._extract_salary_from_text(description)
 
             job_data = {
                 "id": self._generate_id(),
@@ -311,7 +323,7 @@ class JobScraper:
                     "description": ""
                 },
                 "location": {
-                    "specificLocation": self._extract_text(soup, ['[class*="location"]'], "Unknown"),
+                    "specificLocation": self._extract_text(soup, ['[class*="location"]', '[class*="Location"]'], "Unknown"),
                     "remote": "remote" in description.lower(),
                     "hybrid": "hybrid" in description.lower()
                 },
@@ -321,7 +333,7 @@ class JobScraper:
                 "requirements": self._extract_requirements(description),
                 "preferredQualifications": [],
                 "benefits": self._extract_benefits(description),
-                "salaryRange": None,
+                "salaryRange": salary_range,
                 "postedDate": None,
                 "closingDate": None,
                 "applicationInfo": None
@@ -333,6 +345,167 @@ class JobScraper:
             raise ScraperError(f"Generic scraping failed: {str(e)}")
 
     # Helper methods
+
+    def _extract_title(self, soup: BeautifulSoup) -> str:
+        """Extract job title with multiple strategies"""
+        # Try common selectors
+        title_selectors = [
+            'h1',
+            '.job-title',
+            '[class*="title"]',
+            '[class*="Title"]',
+            '[data-testid*="title"]',
+            'header h1',
+            'main h1'
+        ]
+
+        for selector in title_selectors:
+            elem = soup.select_one(selector)
+            if elem:
+                title = elem.get_text(strip=True)
+                # Filter out obviously bad titles
+                if title and len(title) > 5 and len(title) < 200:
+                    # Check if it looks like a job title (not just generic page title)
+                    if not any(bad in title.lower() for bad in ['careers', 'job openings', 'apply now', 'just a moment']):
+                        return title
+
+        return "Unknown Title"
+
+    def _extract_title_from_description(self, description: str, url: str) -> str:
+        """Extract job title from description text as fallback"""
+        lines = [line.strip() for line in description.split('\n') if line.strip()]
+
+        # Strategy 1: For OpenAI and similar career pages
+        # Look for title after "Careers" line
+        for i, line in enumerate(lines):
+            if line.lower() in ['careers', 'career', 'jobs']:
+                # Title is usually the next line
+                if i + 1 < len(lines):
+                    next_line = lines[i + 1]
+                    # Check if it looks like a job title
+                    if len(next_line) > 10 and len(next_line) < 200:
+                        if not any(bad in next_line.lower() for bad in ['apply now', 'about', 'location', 'compensation']):
+                            return next_line
+
+        # Strategy 2: Look for lines that contain common job title keywords
+        job_keywords = ['engineer', 'developer', 'manager', 'designer', 'analyst', 'scientist',
+                       'director', 'specialist', 'coordinator', 'lead', 'architect']
+        for line in lines[:10]:  # Check first 10 lines only
+            if len(line) > 10 and len(line) < 200:
+                if any(keyword in line.lower() for keyword in job_keywords):
+                    # Make sure it's not part of a sentence
+                    if not line.endswith('.') and not line.startswith('We'):
+                        return line
+
+        # Strategy 3: Extract from URL if it has a descriptive path
+        # e.g., /careers/software-engineer-role/
+        url_parts = urlparse(url).path.split('/')
+        for part in url_parts:
+            if part and len(part) > 10:
+                # Convert kebab-case to title case
+                title_candidate = part.replace('-', ' ').replace('_', ' ').title()
+                if any(keyword in title_candidate.lower() for keyword in job_keywords):
+                    return title_candidate
+
+        return "Unknown Title"
+
+    def _extract_description(self, soup: BeautifulSoup, fallback_text: str = "") -> str:
+        """Extract job description with multiple strategies"""
+        # Try common description containers
+        desc_selectors = [
+            '[class*="description"]',
+            '[class*="Description"]',
+            '[class*="details"]',
+            '[class*="Details"]',
+            '[class*="content"]',
+            '[class*="Content"]',
+            'main',
+            'article'
+        ]
+
+        for selector in desc_selectors:
+            elem = soup.select_one(selector)
+            if elem:
+                text = elem.get_text(separator='\n', strip=True)
+                if text and len(text) > 100:  # Must have substantial content
+                    return text
+
+        # Fallback to all text if nothing found
+        if len(fallback_text) > 100:
+            return fallback_text
+
+        return ""
+
+    def _extract_salary_from_text(self, text: str) -> Optional[Dict]:
+        """Extract salary information from text"""
+        if not text:
+            return None
+
+        # Pattern 1: "$325K – $405K" or "$325,000 - $405,000"
+        pattern1 = r'\$(\d{1,3}[,\.]?\d{0,3})[Kk]?\s*[–—-]\s*\$(\d{1,3}[,\.]?\d{0,3})[Kk]?'
+        match = re.search(pattern1, text)
+        if match:
+            min_val = self._parse_salary_number(match.group(1))
+            max_val = self._parse_salary_number(match.group(2))
+
+            # Check if values have K suffix
+            if 'K' in match.group(0) or 'k' in match.group(0):
+                min_val *= 1000
+                max_val *= 1000
+
+            return {
+                "min": int(min_val),
+                "max": int(max_val),
+                "currency": "USD",
+                "period": "Year",
+                "displayText": match.group(0)
+            }
+
+        # Pattern 2: "Compensation$325K – $405K"
+        pattern2 = r'Compensation\s*\$(\d{1,3}[,\.]?\d{0,3})[Kk]?\s*[–—-]\s*\$?(\d{1,3}[,\.]?\d{0,3})[Kk]?'
+        match = re.search(pattern2, text, re.IGNORECASE)
+        if match:
+            min_val = self._parse_salary_number(match.group(1))
+            max_val = self._parse_salary_number(match.group(2))
+
+            # Assume K suffix for compensation format
+            if min_val < 10000:  # Likely in K format
+                min_val *= 1000
+                max_val *= 1000
+
+            return {
+                "min": int(min_val),
+                "max": int(max_val),
+                "currency": "USD",
+                "period": "Year",
+                "displayText": match.group(0)
+            }
+
+        # Pattern 3: "$150k-$200k" (compact format)
+        pattern3 = r'\$(\d{1,3})[Kk]\s*-\s*\$?(\d{1,3})[Kk]'
+        match = re.search(pattern3, text, re.IGNORECASE)
+        if match:
+            min_val = int(match.group(1)) * 1000
+            max_val = int(match.group(2)) * 1000
+
+            return {
+                "min": min_val,
+                "max": max_val,
+                "currency": "USD",
+                "period": "Year",
+                "displayText": match.group(0)
+            }
+
+        return None
+
+    def _parse_salary_number(self, text: str) -> float:
+        """Parse salary number from text, handling commas and decimals"""
+        # Remove commas and convert to float
+        cleaned = text.replace(',', '').replace('.', '')
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
 
     def _extract_text(self, soup: BeautifulSoup, selectors: list, default: str = "") -> str:
         """Extract text from soup using multiple selectors"""
@@ -387,30 +560,51 @@ class JobScraper:
         """Extract requirements from description text"""
         requirements = []
 
-        # Look for requirements sections
+        # Look for requirements sections with various headers
         req_patterns = [
-            r'requirements?:?(.*?)(?:preferred|responsibilities|benefits|$)',
-            r'qualifications?:?(.*?)(?:preferred|responsibilities|benefits|$)',
-            r'must have:?(.*?)(?:nice to have|responsibilities|benefits|$)'
+            r'(?:requirements?|qualifications?|must have|you might thrive if you|you\'ll need):?\s*(.*?)(?:preferred|nice to have|responsibilities|benefits|about (?:the role|us)|what we offer|$)',
+            r'(?:experience|skills?) required:?\s*(.*?)(?:preferred|nice to have|responsibilities|benefits|$)',
+            r'minimum qualifications?:?\s*(.*?)(?:preferred|responsibilities|benefits|$)'
         ]
 
         for pattern in req_patterns:
             match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
             if match:
                 req_text = match.group(1)
-                # Split by bullet points or newlines
-                items = re.split(r'[•\-\*\n]+', req_text)
+
+                # Split by bullet points, newlines, or numbered lists
+                # Common patterns: "•", "-", "*", "1.", "2.", etc.
+                items = re.split(r'(?:\n\s*(?:[•\-\*▪]|\d+[\.\)])\s+)', req_text)
+
                 for item in items:
                     item = item.strip()
-                    if len(item) > 10 and len(item) < 500:  # reasonable length
+                    # Filter reasonable requirements
+                    if 10 < len(item) < 500:
+                        # Remove trailing punctuation and clean up
+                        item = re.sub(r'[\.,:;]+$', '', item)
                         requirements.append({
                             "text": item,
                             "required": True,
                             "category": "other"
                         })
-                break
 
-        return requirements[:10]  # Limit to 10 requirements
+                if requirements:
+                    break
+
+        # If no structured requirements found, try extracting lines with "years of experience"
+        if not requirements:
+            experience_pattern = r'(?:^|\n)\s*([^\n]*\d+\+?\s*years?[^\n]*)'
+            matches = re.findall(experience_pattern, text, re.IGNORECASE | re.MULTILINE)
+            for match in matches[:5]:  # Limit to 5
+                item = match.strip()
+                if 10 < len(item) < 500:
+                    requirements.append({
+                        "text": item,
+                        "required": True,
+                        "category": "experience"
+                    })
+
+        return requirements[:15]  # Limit to 15 requirements
 
     def _extract_benefits(self, text: str) -> list:
         """Extract benefits from description text"""

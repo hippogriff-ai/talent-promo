@@ -69,9 +69,20 @@ export default function JobURLInput() {
   };
 
   const handleFetch = async () => {
-    if (urls.length === 0) {
+    // In single URL mode, use the url state directly
+    const urlsToFetch = batchMode ? urls : (url ? [url] : []);
+
+    if (urlsToFetch.length === 0) {
       setError("Please add at least one URL");
       return;
+    }
+
+    // Validate URLs
+    for (const urlToValidate of urlsToFetch) {
+      if (!validateURL(urlToValidate)) {
+        setError(`Invalid URL: ${urlToValidate}`);
+        return;
+      }
     }
 
     setLoading(true);
@@ -82,15 +93,15 @@ export default function JobURLInput() {
     try {
       if (batchMode) {
         // Batch processing
-        const results = await fetchBatchJobs(urls);
+        const results = await fetchBatchJobs(urlsToFetch);
         setBatchResults(results);
       } else {
         // Single URL
-        const job = await fetchJob(urls[0]);
+        const job = await fetchJob(urlsToFetch[0]);
         setJobPosting(job);
 
         // Add to recent URLs
-        const recent = [urls[0], ...recentUrls.filter(u => u !== urls[0])].slice(0, 5);
+        const recent = [urlsToFetch[0], ...recentUrls.filter(u => u !== urlsToFetch[0])].slice(0, 5);
         setRecentUrls(recent);
       }
     } catch (err) {
@@ -109,7 +120,7 @@ export default function JobURLInput() {
     }
 
     // Fetch from backend
-    const response = await fetch("/api/jobs/fetch", {
+    const response = await fetch("http://localhost:8000/jobs/fetch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url }),
@@ -131,7 +142,7 @@ export default function JobURLInput() {
   };
 
   const fetchBatchJobs = async (urls: string[]): Promise<BatchJobRetrievalResult> => {
-    const response = await fetch("/api/jobs/batch", {
+    const response = await fetch("http://localhost:8000/jobs/batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ urls }),

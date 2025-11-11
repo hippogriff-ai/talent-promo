@@ -12,6 +12,11 @@ except ImportError:
     PdfReader = None
 
 try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
+
+try:
     from docx import Document
 except ImportError:
     Document = None
@@ -29,7 +34,7 @@ class DocumentParser:
 
     def parse_pdf(self, file_content: bytes) -> str:
         """
-        Parse PDF file and extract text
+        Parse PDF file and extract text with better structure preservation
 
         Args:
             file_content: PDF file content as bytes
@@ -40,8 +45,30 @@ class DocumentParser:
         Raises:
             DocumentParserError: If parsing fails
         """
+        # Try pdfplumber first for better layout preservation
+        if pdfplumber:
+            try:
+                pdf_file = io.BytesIO(file_content)
+                text_pages = []
+
+                with pdfplumber.open(pdf_file) as pdf:
+                    for page in pdf.pages:
+                        # Extract text with layout preserved
+                        text = page.extract_text(layout=True)
+                        if text:
+                            text_pages.append(text)
+
+                full_text = '\n\n=== PAGE BREAK ===\n\n'.join(text_pages)
+
+                if full_text.strip():
+                    return full_text
+
+            except Exception as e:
+                logger.warning(f"pdfplumber failed, falling back to PyPDF2: {str(e)}")
+
+        # Fallback to PyPDF2
         if not PdfReader:
-            raise DocumentParserError("PyPDF2 is not installed")
+            raise DocumentParserError("PDF parsing libraries not installed")
 
         try:
             pdf_file = io.BytesIO(file_content)
@@ -49,11 +76,21 @@ class DocumentParser:
 
             text_pages = []
             for page in reader.pages:
-                text = page.extract_text()
+                # Extract text with layout mode for better structure
+                text = page.extract_text(extraction_mode="layout")
                 if text:
-                    text_pages.append(text)
+                    # Clean up excessive whitespace while preserving structure
+                    lines = text.split('\n')
+                    cleaned_lines = []
+                    for line in lines:
+                        # Keep lines with content, preserve some spacing
+                        cleaned_line = line.rstrip()
+                        if cleaned_line.strip():
+                            cleaned_lines.append(cleaned_line)
 
-            full_text = '\n\n'.join(text_pages)
+                    text_pages.append('\n'.join(cleaned_lines))
+
+            full_text = '\n\n=== PAGE BREAK ===\n\n'.join(text_pages)
 
             if not full_text.strip():
                 raise DocumentParserError("No text content found in PDF")

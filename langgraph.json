@@ -1,0 +1,9 @@
+{
+  "dockerfile_lines": [],
+  "graphs": {
+    "resume_optimizer": "./apps/api/langgraph/graph.py:create_resume_workflow"
+  },
+  "env": ".env",
+  "dependencies": ["."],
+  "python_version": "3.11"
+}

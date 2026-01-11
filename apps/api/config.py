@@ -38,14 +38,21 @@ class Settings(BaseSettings):
     )
 
     # OpenAI Configuration
-    openai_api_key: str
-    openai_model: str = "gpt-5-mini"  # Default model with structured outputs support
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"  # Default model with structured outputs support
     openai_timeout: int = 60
 
-    # Temporal Configuration
-    temporal_address: str = "localhost:7233"  # Temporal server address
-    temporal_namespace: str = "default"  # Temporal namespace
-    temporal_task_queue: str = "research-task-queue"  # Task queue for research workflows
+    # Anthropic Configuration (for LangGraph)
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-20250514"
+
+    # EXA Configuration
+    exa_api_key: str = ""
+
+    # LangSmith Configuration (for tracing/monitoring)
+    langsmith_api_key: str = ""
+    langsmith_project: str = "talent-promo"
+    langsmith_tracing: bool = True
 
     # Logging
     log_level: str = "INFO"

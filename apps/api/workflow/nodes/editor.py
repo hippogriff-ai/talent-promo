@@ -6,6 +6,7 @@ from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.types import interrupt
 
 from config import get_settings
 from workflow.state import ResumeState
@@ -90,19 +91,45 @@ Return ONLY the adjusted text, no explanations.""",
 async def editor_assist_node(state: ResumeState) -> dict[str, Any]:
     """Provide AI assistance for resume editing in Tiptap.
 
-    This node is called when the user is in the editor and requests AI help.
-    The specific action and context are passed through the state.
+    This node uses interrupt() to pause the workflow and wait for user approval.
+    The user edits the resume in the frontend, then clicks "Approve" which
+    resumes the workflow with the approval signal.
     """
-    logger.info("Editor assist node - passthrough for manual editing")
+    logger.info("Editor assist node - waiting for user approval")
 
-    # This node primarily serves as a transition point.
-    # Actual editor assistance happens via the /editor/assist API endpoint
-    # which calls get_editor_suggestion() directly.
+    # Check if draft is already approved (resume from interrupt)
+    if state.get("draft_approved"):
+        logger.info("Draft approved, proceeding to export")
+        return {
+            "current_step": "editor",
+            "updated_at": datetime.now().isoformat(),
+        }
 
-    return {
-        "current_step": "editor",
-        "updated_at": datetime.now().isoformat(),
-    }
+    # Interrupt and wait for user to approve the draft
+    # The frontend shows the editor, user makes edits, then clicks "Approve"
+    # which calls POST /api/optimize/{thread_id}/answer with "approve"
+    approval = interrupt({
+        "interrupt_type": "draft_approval",
+        "message": "Review and approve your resume draft",
+        "resume_html": state.get("resume_html", ""),
+        "suggestions": state.get("draft_suggestions", []),
+    })
+
+    # User approved - set the flag
+    if approval and str(approval).lower().strip() in ["approve", "approved", "yes", "confirm"]:
+        logger.info("User approved the draft")
+        return {
+            "draft_approved": True,
+            "current_step": "editor",
+            "updated_at": datetime.now().isoformat(),
+        }
+    else:
+        # User made edits but didn't approve yet - stay in editor
+        logger.info(f"User response: {approval} - staying in editor")
+        return {
+            "current_step": "editor",
+            "updated_at": datetime.now().isoformat(),
+        }
 
 
 async def get_editor_suggestion(

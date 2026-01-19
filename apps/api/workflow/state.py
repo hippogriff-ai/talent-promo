@@ -430,6 +430,10 @@ class ResumeState(TypedDict):
     uploaded_resume_text: Optional[str]
     uploaded_job_text: Optional[str]  # Pasted job description as fallback
 
+    # Raw markdown from EXA (for display and user editing)
+    profile_markdown: Optional[str]  # Raw LinkedIn markdown from EXA
+    job_markdown: Optional[str]  # Raw job posting markdown from EXA
+
     # Parsed data (full - stored for recovery)
     user_profile: Optional[dict]  # Serialized UserProfile
     job_posting: Optional[dict]   # Serialized JobPostingData
@@ -447,6 +451,8 @@ class ResumeState(TypedDict):
     discovered_experiences: list[dict]  # List of serialized DiscoveredExperience
     discovery_confirmed: bool  # True when user confirms discovery is complete
     discovery_exchanges: int  # Number of conversation exchanges
+    discovery_phase: Optional[str]  # "setup" or "waiting" - controls two-phase interrupt flow
+    pending_prompt_id: Optional[str]  # ID of prompt awaiting response
 
     # Human-in-the-loop Q&A
     qa_history: list[dict]  # List of serialized QAInteraction
@@ -486,6 +492,9 @@ class ResumeState(TypedDict):
 
     # Progress tracking (for real-time UI updates)
     progress_messages: list[dict]  # List of {timestamp, phase, message, detail} for live progress
+
+    # User preferences for writing style
+    user_preferences: Optional[dict]  # Tone, structure, quantification preferences
 
     # Timestamps
     created_at: str

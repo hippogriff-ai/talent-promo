@@ -78,7 +78,7 @@ class TestStartWorkflow:
         )
 
         assert response.status_code == 400
-        assert "Job URL is required" in response.json()["detail"]
+        assert "Either job URL or pasted job description is required" in response.json()["detail"]
 
     def test_start_with_invalid_linkedin_url(self):
         """Test that invalid LinkedIn URL is rejected."""
@@ -382,7 +382,7 @@ class TestExportEndpoints:
         from routers.optimize import _workflows
         _workflows[thread_id]["state"]["resume_html"] = "<h1>Test</h1>"
 
-        response = client.post(f"/api/optimize/{thread_id}/export/download/exe")
+        response = client.get(f"/api/optimize/{thread_id}/export/download/exe")
 
         assert response.status_code == 400
         assert "invalid format" in response.json()["detail"].lower()

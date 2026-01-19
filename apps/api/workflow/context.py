@@ -39,11 +39,11 @@ def build_working_context(state: ResumeState) -> dict:
     qa_history = state.get("qa_history", []) or []
 
     context = WorkingContext(
-        target_role=job_posting.get("title", ""),
-        target_company=job_posting.get("company_name", ""),
-        key_strengths=gap_analysis.get("strengths", [])[:5],
-        key_gaps=gap_analysis.get("gaps", [])[:5],
-        priority_keywords=gap_analysis.get("keywords_to_include", [])[:10],
+        target_role=job_posting.get("title") or "",
+        target_company=job_posting.get("company_name") or "",
+        key_strengths=(gap_analysis.get("strengths") or [])[:5],
+        key_gaps=(gap_analysis.get("gaps") or [])[:5],
+        priority_keywords=(gap_analysis.get("keywords_to_include") or [])[:10],
         recent_qa=qa_history[-3:] if qa_history else [],  # Only last 3
         current_objective=_get_current_objective(state),
     )

@@ -74,44 +74,53 @@ async def generate_discovery_prompts(state: ResumeState) -> list[dict]:
     for exp in experiences[:3]:
         experience_summary += f"- {exp.get('position', 'Role')} at {exp.get('company', 'Company')}\n"
 
-    prompt = f"""You are a career coach helping {user_name} prepare for an application to {job_title} at {company_name}.
+    prompt = f"""You are a senior executive career coach with 20+ years experience helping high performers land roles at top companies. Your approach is Socratic - you ask incisive questions that make candidates suddenly realize "Oh, I never thought of that as an achievement worth mentioning!"
 
-Based on the gap analysis, generate discovery questions to surface hidden or forgotten experiences that could address the candidate's gaps.
+You're helping {user_name} prepare for {job_title} at {company_name}. Your job is to unearth hidden gold - the achievements, initiatives, and impact they've undervalued or forgotten.
 
-## Gap Analysis
-Gaps to address:
+## The Gaps We Need to Address
 {chr(10).join(f"- {g}" for g in gaps[:5])}
 
-Opportunities to explore:
+## Opportunities Worth Exploring
 {chr(10).join(f"- {o.get('description', o) if isinstance(o, dict) else o}" for o in opportunities[:3])}
 
-## Job Requirements
+## What {company_name} is Looking For
 {chr(10).join(f"- {r}" for r in requirements[:5])}
 
-## Candidate's Known Experience
+## What We Know About {user_name}
 {experience_summary}
 
-## Instructions
-Generate 5-7 discovery questions that:
-1. Are open-ended and encourage detailed responses
-2. Target specific gaps or requirements
-3. Help surface experiences the candidate may have forgotten or undervalued
-4. Are ordered by priority (most important gaps first)
+## Your Coaching Approach
+Generate 5-7 discovery questions that will make {user_name} think differently about their experience:
 
-For each question, provide:
-- The question itself
-- The intent (what you're trying to uncover)
-- Which gaps it relates to
+1. **Dig for hidden impact** - Don't ask "did you lead a team?" Ask about moments when they stepped up, influenced outcomes, or drove change even without the title
+2. **Challenge assumptions** - Many people dismiss their achievements as "just part of the job." Help them see the exceptional in what they consider ordinary
+3. **Be specific and provocative** - Instead of "tell me about a challenge," ask about specific scenarios: "When did you have to convince skeptics? What was on the line?"
+4. **Uncover transferable moments** - Even if they lack exact experience, probe for adjacent situations that demonstrate the same capability
+5. **Focus on stories, not skills** - Stories are memorable. Ask questions that prompt narrative responses with conflict, action, and results
 
-Output as JSON array:
+## Question Style Examples
+- BAD: "Do you have leadership experience?" (generic, yes/no, boring)
+- GOOD: "Think about a time when a project was about to fail and you were the one who rallied people around a solution. What did you do that no one else was doing?"
+
+- BAD: "Tell me about your technical skills" (resume regurgitation)
+- GOOD: "What's a technical problem you solved that you're secretly proud of, even if it never made it into your resume because it seemed too small?"
+
+- BAD: "Have you worked with cross-functional teams?" (checkbox question)
+- GOOD: "When have you had to get someone who didn't report to you - maybe in a completely different department - to care about your priority? How did you make that happen?"
+
+## Output Format
+Return a JSON array with questions that will make {user_name} pause and think:
 [
   {{
-    "question": "Can you think of a time when you had to learn a new technology quickly to complete a project?",
-    "intent": "Uncover rapid learning ability and adaptability",
-    "related_gaps": ["Limited experience with cloud infrastructure"],
+    "question": "When was the last time you fixed something that wasn't technically your responsibility, just because you couldn't stand watching it stay broken? What happened?",
+    "intent": "Surface initiative and ownership mindset beyond role boundaries",
+    "related_gaps": ["Relevant gap this addresses"],
     "priority": 1
   }}
 ]
+
+Make every question impossible to answer with a simple "yes" or "no". Each should prompt a story.
 """
 
     try:
@@ -149,35 +158,35 @@ Output as JSON array:
 
 
 def _get_fallback_prompts(gaps: list[str]) -> list[dict]:
-    """Generate fallback prompts if LLM fails."""
+    """Generate fallback prompts if LLM fails - executive coach style."""
     fallback_questions = [
         {
-            "question": "Can you describe a project where you had to learn something completely new to succeed?",
-            "intent": "Uncover adaptability and learning ability",
+            "question": "Think about a time when something at work was clearly broken or inefficient, and you were the one who decided to fix it - even though nobody asked you to. What was the situation, and what did you actually do?",
+            "intent": "Surface initiative and ownership beyond formal responsibilities",
             "related_gaps": gaps[:1] if gaps else [],
             "priority": 1,
         },
         {
-            "question": "Tell me about a time you led a team or initiative, even informally.",
-            "intent": "Surface leadership experience",
+            "question": "When was the last time you had to convince someone more senior than you - or someone who didn't report to you - to change their mind about something important? What was at stake, and how did you approach it?",
+            "intent": "Uncover influence and stakeholder management skills",
             "related_gaps": gaps[1:2] if len(gaps) > 1 else [],
             "priority": 2,
         },
         {
-            "question": "What's a challenging problem you solved that you're particularly proud of?",
-            "intent": "Identify problem-solving achievements",
+            "question": "What's something you built, created, or improved that you're secretly proud of - even if it never made it into your resume because it seemed too small or 'just part of the job'?",
+            "intent": "Surface undervalued achievements and craftsmanship",
             "related_gaps": gaps[2:3] if len(gaps) > 2 else [],
             "priority": 3,
         },
         {
-            "question": "Have you ever worked with stakeholders from different departments or backgrounds?",
-            "intent": "Uncover cross-functional collaboration",
+            "question": "Tell me about a time when a project or initiative was about to fail, and you were the person who figured out how to save it. What did everyone else miss that you caught?",
+            "intent": "Reveal problem-solving under pressure and unique contributions",
             "related_gaps": gaps[3:4] if len(gaps) > 3 else [],
             "priority": 4,
         },
         {
-            "question": "What side projects, volunteer work, or personal interests demonstrate skills relevant to this role?",
-            "intent": "Surface non-work experiences that show capability",
+            "question": "Outside of your main job duties, when have you taken on something - a side project, volunteer work, a personal challenge - that pushed you to develop skills you wouldn't normally use at work?",
+            "intent": "Discover transferable skills from non-traditional experiences",
             "related_gaps": gaps[4:5] if len(gaps) > 4 else [],
             "priority": 5,
         },
@@ -217,45 +226,52 @@ async def process_discovery_response(
     requirements = job_posting.get("requirements", [])
     gaps = gap_analysis.get("gaps", [])
 
-    prompt = f"""You are analyzing a user's response during a career discovery conversation.
+    prompt = f"""You are a senior executive career coach analyzing a candidate's response to extract resume-worthy achievements and determine if a follow-up would unearth more gold.
 
-## Context
-Original question: {current_prompt.get('question', '')}
-Question intent: {current_prompt.get('intent', '')}
-Related gaps: {', '.join(current_prompt.get('related_gaps', []))}
+## The Question Asked
+{current_prompt.get('question', '')}
 
-## Job Requirements
+## What We Were Looking For
+Intent: {current_prompt.get('intent', '')}
+Gaps to address: {', '.join(current_prompt.get('related_gaps', []))}
+
+## Target Job Requirements
 {chr(10).join(f"- {r}" for r in requirements[:5])}
 
-## User's Response
+## The Candidate's Response
 {user_response}
 
-## Instructions
-Analyze the response and:
-1. Identify any concrete experiences or achievements mentioned
-2. Determine if a follow-up question would help get more detail
-3. Map experiences to specific job requirements
+## Your Analysis Task
 
-For each experience found, extract:
-- A clear description
-- The exact quote that reveals it
-- Which job requirements it addresses
+1. **Extract achievement stories**: Look for concrete examples with results, not just activities. A good story has:
+   - What was the situation/challenge?
+   - What did THEY specifically do (not the team)?
+   - What was the measurable or meaningful impact?
 
-Output as JSON:
+2. **Decide if we should dig deeper**:
+   - If they gave a vague answer ("I've done that before"), ask for a SPECIFIC instance
+   - If they mentioned something interesting but glossed over the impact, probe the results
+   - If they revealed a rich story with clear impact, move on - don't over-interview them
+   - If they said very little, ask a different, more specific version of the question
+
+3. **If you ask a follow-up, make it sharp**:
+   - BAD: "Can you tell me more?" (lazy, generic)
+   - GOOD: "You mentioned rallying the team during the outage - what specifically did you do that calmed people down? What would have happened if you hadn't stepped in?"
+
+## Output Format
 {{
   "experiences": [
     {{
-      "description": "Led migration of legacy system to cloud",
-      "source_quote": "I actually led our team's move to AWS when our old servers...",
-      "mapped_requirements": ["Cloud infrastructure experience", "Technical leadership"]
+      "description": "Concise achievement statement suitable for a resume bullet",
+      "source_quote": "Their exact words that support this",
+      "mapped_requirements": ["Which job requirements this addresses"]
     }}
   ],
-  "follow_up": "Can you tell me more about the specific challenges you faced during that migration?",
-  "move_to_next": false
+  "follow_up": "Your incisive follow-up question if needed, or null if the response was comprehensive",
+  "move_to_next": true/false  // true if we got what we need, false if follow-up is warranted
 }}
 
-If no experiences were found or response was too brief, set experiences to empty array and suggest a follow-up.
-If the response was comprehensive, set move_to_next to true.
+Be generous in extracting experiences - even partial stories can become great resume bullets. But be strategic about follow-ups: only ask if there's clearly more gold to mine.
 """
 
     try:
@@ -309,144 +325,167 @@ def get_next_prompt(state: ResumeState) -> Optional[dict]:
 async def discovery_node(state: ResumeState) -> dict:
     """Main discovery node for the workflow.
 
-    This node:
-    1. On first entry: generates discovery prompts from gap analysis
-    2. Returns the first prompt via interrupt for user response
-    3. On resume: processes user response and returns next prompt or completes
+    Uses a state-based phase tracking approach:
+    - Phase "setup": Generate prompts, add message, set phase to "waiting", return state
+    - Phase "waiting": Call interrupt(), process response, update state
+
+    This ensures state is persisted BEFORE the interrupt by returning early
+    and letting the graph loop back.
     """
     from langgraph.types import interrupt
 
-    discovery_prompts = state.get("discovery_prompts", [])
-    discovery_messages = state.get("discovery_messages", [])
-    discovered_experiences = state.get("discovered_experiences", [])
+    discovery_prompts = list(state.get("discovery_prompts", []))
+    discovery_messages = list(state.get("discovery_messages", []))
+    discovered_experiences = list(state.get("discovered_experiences", []))
     discovery_exchanges = state.get("discovery_exchanges", 0)
     discovery_confirmed = state.get("discovery_confirmed", False)
+    discovery_phase = state.get("discovery_phase", "setup")
+    pending_prompt_id = state.get("pending_prompt_id")
 
     # Check if discovery is already confirmed
     if discovery_confirmed:
         logger.info("Discovery already confirmed, proceeding to next step")
         return {
             "current_step": "qa",
+            "discovery_phase": None,
+            "pending_prompt_id": None,
             "updated_at": datetime.now().isoformat(),
         }
 
-    # Generate prompts on first entry
-    if not discovery_prompts:
-        logger.info("Generating discovery prompts from gap analysis")
-        prompts = await generate_discovery_prompts(state)
+    # === SETUP PHASE: Generate prompts and prepare for interrupt ===
+    if discovery_phase == "setup" or not discovery_prompts:
+        # Generate prompts on first entry
+        if not discovery_prompts:
+            logger.info("Generating discovery prompts from gap analysis")
+            prompts = await generate_discovery_prompts(state)
 
-        if not prompts:
-            logger.warning("No prompts generated, skipping discovery")
+            if not prompts:
+                logger.warning("No prompts generated, skipping discovery")
+                return {
+                    "discovery_prompts": [],
+                    "discovery_confirmed": True,
+                    "current_step": "qa",
+                    "updated_at": datetime.now().isoformat(),
+                }
+
+            discovery_prompts = prompts
+
+        # Find next unasked prompt
+        current_prompt = get_next_prompt({"discovery_prompts": discovery_prompts})
+
+        if not current_prompt:
+            # All prompts asked, complete discovery
+            logger.info("All discovery prompts asked")
             return {
-                "discovery_prompts": [],
+                "discovery_prompts": discovery_prompts,
                 "discovery_confirmed": True,
                 "current_step": "qa",
+                "sub_step": None,
+                "discovery_phase": None,
+                "pending_prompt_id": None,
                 "updated_at": datetime.now().isoformat(),
             }
 
-        # Get first prompt
-        first_prompt = prompts[0]
-        first_prompt["asked"] = True
+        # Mark prompt as asked
+        for p in discovery_prompts:
+            if p["id"] == current_prompt["id"]:
+                p["asked"] = True
+                break
 
-        # Add agent message
+        # Add agent message for this prompt
         agent_message = DiscoveryMessage(
             role="agent",
-            content=first_prompt["question"],
-            prompt_id=first_prompt["id"],
+            content=current_prompt["question"],
+            prompt_id=current_prompt["id"],
         ).model_dump()
+        discovery_messages.append(agent_message)
+
+        # Count prompts asked
+        asked_count = sum(1 for p in discovery_prompts if p.get("asked", False))
 
         # Build interrupt payload
         interrupt_payload = {
             "interrupt_type": "discovery_prompt",
-            "message": first_prompt["question"],
+            "message": current_prompt["question"],
             "context": {
-                "intent": first_prompt.get("intent", ""),
-                "related_gaps": first_prompt.get("related_gaps", []),
-                "prompt_number": 1,
-                "total_prompts": len(prompts),
+                "intent": current_prompt.get("intent", ""),
+                "related_gaps": current_prompt.get("related_gaps", []),
+                "prompt_number": asked_count,
+                "total_prompts": len(discovery_prompts),
+                "exchanges_completed": discovery_exchanges,
             },
             "can_skip": True,
         }
 
-        # Save state before interrupt
-        new_state = {
-            "discovery_prompts": prompts,
-            "discovery_messages": [agent_message],
+        # Return state with phase="waiting" - graph will loop back
+        # This PERSISTS the state including messages before we call interrupt()
+        logger.info(f"Discovery setup complete, asking prompt {asked_count}/{len(discovery_prompts)}")
+        return {
+            "discovery_prompts": discovery_prompts,
+            "discovery_messages": discovery_messages,
+            "discovered_experiences": discovered_experiences,
+            "discovery_exchanges": discovery_exchanges,
             "current_step": "discovery",
             "sub_step": "awaiting_response",
+            "discovery_phase": "waiting",
+            "pending_prompt_id": current_prompt["id"],
             "pending_interrupt": interrupt_payload,
             "updated_at": datetime.now().isoformat(),
         }
 
-        # Interrupt for user response
+    # === WAITING PHASE: Call interrupt and process response ===
+    if discovery_phase == "waiting":
+        # Find the prompt we're waiting on
+        current_prompt = None
+        for p in discovery_prompts:
+            if p["id"] == pending_prompt_id:
+                current_prompt = p
+                break
+
+        if not current_prompt:
+            logger.error(f"Pending prompt {pending_prompt_id} not found")
+            return {
+                "discovery_phase": "setup",
+                "pending_prompt_id": None,
+                "updated_at": datetime.now().isoformat(),
+            }
+
+        # Rebuild interrupt payload
+        asked_count = sum(1 for p in discovery_prompts if p.get("asked", False))
+        interrupt_payload = {
+            "interrupt_type": "discovery_prompt",
+            "message": current_prompt["question"],
+            "context": {
+                "intent": current_prompt.get("intent", ""),
+                "related_gaps": current_prompt.get("related_gaps", []),
+                "prompt_number": asked_count,
+                "total_prompts": len(discovery_prompts),
+                "exchanges_completed": discovery_exchanges,
+            },
+            "can_skip": True,
+        }
+
+        # Call interrupt to wait for user response
         user_response = interrupt(interrupt_payload)
 
         # Process user response
-        return await _handle_user_response(
+        result = await _handle_user_response(
             user_response,
-            first_prompt,
-            {**state, **new_state},
+            current_prompt,
+            state,
         )
 
-    # Get next prompt
-    next_prompt = get_next_prompt(state)
+        # Set phase back to "setup" to get next prompt
+        result["discovery_phase"] = "setup"
+        result["pending_prompt_id"] = None
 
-    if not next_prompt:
-        # All prompts asked, complete discovery
-        logger.info("All discovery prompts asked")
-        return {
-            "discovery_confirmed": True,
-            "current_step": "qa",
-            "sub_step": None,
-            "updated_at": datetime.now().isoformat(),
-        }
+        return result
 
-    # Mark prompt as asked
-    prompts = state.get("discovery_prompts", [])
-    for p in prompts:
-        if p["id"] == next_prompt["id"]:
-            p["asked"] = True
-            break
-
-    # Add agent message
-    agent_message = DiscoveryMessage(
-        role="agent",
-        content=next_prompt["question"],
-        prompt_id=next_prompt["id"],
-    ).model_dump()
-
-    messages = list(discovery_messages)
-    messages.append(agent_message)
-
-    # Count prompts asked
-    asked_count = sum(1 for p in prompts if p.get("asked", False))
-
-    # Build interrupt payload
-    interrupt_payload = {
-        "interrupt_type": "discovery_prompt",
-        "message": next_prompt["question"],
-        "context": {
-            "intent": next_prompt.get("intent", ""),
-            "related_gaps": next_prompt.get("related_gaps", []),
-            "prompt_number": asked_count,
-            "total_prompts": len(prompts),
-        },
-        "can_skip": True,
+    # Fallback - reset to setup phase
+    return {
+        "discovery_phase": "setup",
+        "updated_at": datetime.now().isoformat(),
     }
-
-    # Interrupt for user response
-    user_response = interrupt(interrupt_payload)
-
-    # Process user response
-    return await _handle_user_response(
-        user_response,
-        next_prompt,
-        {
-            **state,
-            "discovery_prompts": prompts,
-            "discovery_messages": messages,
-        },
-    )
 
 
 async def _handle_user_response(
@@ -454,16 +493,25 @@ async def _handle_user_response(
     current_prompt: dict,
     state: ResumeState,
 ) -> dict:
-    """Handle user response to a discovery prompt."""
+    """Handle user response to a discovery prompt.
+
+    Now with adaptive questioning:
+    - If LLM suggests a follow-up, insert it as next question
+    - Follow-ups get higher priority than pre-generated questions
+    - This creates a more natural conversation flow
+    """
     discovery_messages = list(state.get("discovery_messages", []))
     discovered_experiences = list(state.get("discovered_experiences", []))
     discovery_exchanges = state.get("discovery_exchanges", 0)
+    discovery_prompts = list(state.get("discovery_prompts", []))
 
-    # Check for completion signals
+    # Check for completion signals - skip all questions and go directly to draft
     if user_response.lower().strip() in ["done", "skip", "complete", "finish"]:
         return {
             "discovery_confirmed": True,
-            "current_step": "qa",
+            "user_done_signal": True,  # Also skip QA phase
+            "qa_complete": True,
+            "current_step": "draft",  # Go directly to drafting
             "sub_step": None,
             "updated_at": datetime.now().isoformat(),
         }
@@ -489,14 +537,29 @@ async def _handle_user_response(
     # Increment exchange count
     discovery_exchanges += 1
 
-    # Check if follow-up needed
+    # Handle adaptive follow-up questions
     follow_up = result.get("follow_up")
     move_to_next = result.get("move_to_next", True)
 
-    # For now, always move to next prompt (simplified flow)
-    # Could be enhanced to handle follow-ups
+    # If LLM suggested a follow-up and we shouldn't move on, insert it as next question
+    if follow_up and not move_to_next and discovery_exchanges < 10:
+        # Create a follow-up prompt with higher priority (lower number = higher priority)
+        follow_up_prompt = {
+            "id": f"followup_{uuid.uuid4().hex[:8]}",
+            "question": follow_up,
+            "intent": f"Follow up on: {current_prompt.get('intent', '')}",
+            "related_gaps": current_prompt.get("related_gaps", []),
+            "priority": 0,  # Highest priority - ask next
+            "asked": False,
+            "is_adaptive": True,  # Mark as dynamically generated
+        }
+
+        # Insert at the beginning so it's asked next
+        discovery_prompts.insert(0, follow_up_prompt)
+        logger.info(f"Inserted adaptive follow-up question: {follow_up[:50]}...")
 
     return {
+        "discovery_prompts": discovery_prompts,
         "discovery_messages": discovery_messages,
         "discovered_experiences": discovered_experiences,
         "discovery_exchanges": discovery_exchanges,

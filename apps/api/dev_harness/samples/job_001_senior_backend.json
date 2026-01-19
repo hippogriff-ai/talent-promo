@@ -1,0 +1,62 @@
+{
+  "metadata": {
+    "description": "Senior backend engineer role at fintech startup",
+    "difficulty": "easy",
+    "edge_cases": ["Salary extraction", "Tech stack list", "Work type detection"],
+    "source": "synthetic based on common job posting patterns"
+  },
+  "input": "Senior Software Engineer - Backend\nAcme Payments | San Francisco, CA (Hybrid)\n\nAbout Acme Payments\nAcme is a fast-growing fintech startup building the next generation of payment infrastructure.\nWe process $10B+ annually and are backed by Sequoia and a16z. Join us to shape the future of money movement.\n\nAbout the Role\nWe're looking for a Senior Software Engineer to join our Payments Core team. You'll own critical\ninfrastructure that processes millions of transactions daily. This is a high-impact role where\nyou'll work closely with product and design to build delightful developer experiences.\n\nWhat You'll Do\n• Design and build scalable microservices handling 10k+ requests/second\n• Own the full lifecycle from design to deployment to monitoring\n• Mentor junior engineers and contribute to our engineering culture\n• Collaborate with product managers to define technical requirements\n• Participate in on-call rotation for production systems\n\nRequirements\n• 5+ years of software engineering experience\n• Strong proficiency in Go, Python, or Java\n• Experience with distributed systems and microservices architecture\n• Familiarity with cloud platforms (AWS preferred)\n• Experience with relational databases (PostgreSQL)\n• Strong communication skills and ability to work cross-functionally\n• BS/MS in Computer Science or equivalent experience\n\nNice to Have\n• Experience in fintech or payments industry\n• Knowledge of Kubernetes and container orchestration\n• Experience with event-driven architectures (Kafka, RabbitMQ)\n• Contributions to open-source projects\n• Experience with PCI compliance\n\nTech Stack\nGo, Python, PostgreSQL, Redis, Kafka, Kubernetes, AWS, Terraform, Datadog\n\nBenefits\n• Competitive salary: $180,000 - $250,000 + equity\n• Health, dental, vision insurance (100% covered)\n• Unlimited PTO\n• $2,000 annual learning budget\n• 401(k) with 4% match\n• Hybrid work: 3 days in office\n• Catered lunches, snacks, and coffee\n\nAcme Payments is an equal opportunity employer.",
+  "expected": {
+    "title": "Senior Software Engineer - Backend",
+    "company_name": "Acme Payments",
+    "location": "San Francisco, CA (Hybrid)",
+    "description": "We're looking for a Senior Software Engineer to join our Payments Core team. You'll own critical infrastructure that processes millions of transactions daily. This is a high-impact role where you'll work closely with product and design to build delightful developer experiences.",
+    "work_type": "hybrid",
+    "job_type": "full-time",
+    "experience_level": "Senior",
+    "requirements": [
+      "5+ years of software engineering experience",
+      "Strong proficiency in Go, Python, or Java",
+      "Experience with distributed systems and microservices architecture",
+      "Familiarity with cloud platforms (AWS preferred)",
+      "Experience with relational databases (PostgreSQL)",
+      "Strong communication skills and ability to work cross-functionally",
+      "BS/MS in Computer Science or equivalent experience"
+    ],
+    "preferred_qualifications": [
+      "Experience in fintech or payments industry",
+      "Knowledge of Kubernetes and container orchestration",
+      "Experience with event-driven architectures (Kafka, RabbitMQ)",
+      "Contributions to open-source projects",
+      "Experience with PCI compliance"
+    ],
+    "responsibilities": [
+      "Design and build scalable microservices handling 10k+ requests/second",
+      "Own the full lifecycle from design to deployment to monitoring",
+      "Mentor junior engineers and contribute to our engineering culture",
+      "Collaborate with product managers to define technical requirements",
+      "Participate in on-call rotation for production systems"
+    ],
+    "tech_stack": [
+      "Go",
+      "Python",
+      "PostgreSQL",
+      "Redis",
+      "Kafka",
+      "Kubernetes",
+      "AWS",
+      "Terraform",
+      "Datadog"
+    ],
+    "benefits": [
+      "Competitive salary: $180,000 - $250,000 + equity",
+      "Health, dental, vision insurance (100% covered)",
+      "Unlimited PTO",
+      "$2,000 annual learning budget",
+      "401(k) with 4% match",
+      "Hybrid work: 3 days in office",
+      "Catered lunches, snacks, and coffee"
+    ],
+    "salary_range": "$180,000 - $250,000"
+  }
+}

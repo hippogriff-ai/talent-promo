@@ -146,6 +146,9 @@ export interface WorkflowState {
   data: {
     userProfile: UserProfile | null;
     jobPosting: JobPosting | null;
+    // Raw markdown from EXA for display/editing
+    profileMarkdown: string | null;
+    jobMarkdown: string | null;
     research: ResearchFindings | null;
     gapAnalysis: GapAnalysis | null;
     qaHistory: QAInteraction[];
@@ -161,8 +164,19 @@ export interface WorkflowState {
   };
 }
 
+export interface UserPreferences {
+  tone?: string | null;
+  structure?: string | null;
+  sentence_length?: string | null;
+  first_person?: boolean | null;
+  quantification_preference?: string | null;
+  achievement_focus?: boolean | null;
+  custom_preferences?: Record<string, unknown>;
+}
+
 export interface UseWorkflowReturn extends WorkflowState {
-  startWorkflow: (linkedinUrl?: string, jobUrl?: string, resumeText?: string, jobText?: string) => Promise<string>;
+  startWorkflow: (linkedinUrl?: string, jobUrl?: string, resumeText?: string, jobText?: string, userPreferences?: UserPreferences) => Promise<string>;
+  resumeWorkflow: (threadId: string) => Promise<void>;
   submitAnswer: (answer: string) => Promise<void>;
   updateResume: (html: string) => Promise<void>;
   exportResume: (format: "docx" | "pdf") => Promise<Blob>;
@@ -183,6 +197,8 @@ const initialState: WorkflowState = {
   data: {
     userProfile: null,
     jobPosting: null,
+    profileMarkdown: null,
+    jobMarkdown: null,
     research: null,
     gapAnalysis: null,
     qaHistory: [],
@@ -201,15 +217,17 @@ export function useWorkflow(): UseWorkflowReturn {
 
   // Start new workflow
   const startWorkflow = useCallback(
-    async (linkedinUrl?: string, jobUrl?: string, resumeText?: string, jobText?: string): Promise<string> => {
+    async (linkedinUrl?: string, jobUrl?: string, resumeText?: string, jobText?: string, userPreferences?: UserPreferences): Promise<string> => {
       const response = await fetch(`${API_URL}/api/optimize/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",  // Send session cookie
         body: JSON.stringify({
           linkedin_url: linkedinUrl,
           job_url: jobUrl,
           resume_text: resumeText,
           job_text: jobText,
+          user_preferences: userPreferences,
         }),
       });
 
@@ -233,6 +251,53 @@ export function useWorkflow(): UseWorkflowReturn {
     []
   );
 
+  // Resume existing workflow by threadId
+  const resumeWorkflow = useCallback(
+    async (threadId: string): Promise<void> => {
+      // Fetch current state
+      const response = await fetch(
+        `${API_URL}/api/optimize/status/${threadId}?include_data=true`,
+        { credentials: "include" }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to resume workflow - session may have expired");
+      }
+
+      const data = await response.json();
+
+      // Restore full state
+      setState({
+        threadId,
+        currentStep: data.current_step as WorkflowStep,
+        subStep: data.sub_step || null,
+        status: data.status as WorkflowStatus,
+        pendingQuestion: data.pending_question,
+        qaRound: data.qa_round || 0,
+        progress: data.progress || {},
+        errors: data.errors || [],
+        interruptPayload: data.interrupt_payload || null,
+        data: {
+          userProfile: data.user_profile || null,
+          jobPosting: data.job_posting || null,
+          profileMarkdown: data.profile_markdown || null,
+          jobMarkdown: data.job_markdown || null,
+          research: data.research || null,
+          gapAnalysis: data.gap_analysis || null,
+          qaHistory: data.qa_history || [],
+          resumeHtml: data.resume_html || null,
+          discoveryPrompts: data.discovery_prompts || [],
+          discoveryMessages: data.discovery_messages || [],
+          discoveredExperiences: data.discovered_experiences || [],
+          discoveryConfirmed: data.discovery_confirmed ?? false,
+          discoveryExchanges: data.discovery_exchanges ?? 0,
+          progressMessages: data.progress_messages || [],
+        },
+      });
+    },
+    []
+  );
+
   // Poll for status updates
   useEffect(() => {
     if (!state.threadId || state.status === "completed" || state.status === "error") {
@@ -242,7 +307,8 @@ export function useWorkflow(): UseWorkflowReturn {
     const pollStatus = async () => {
       try {
         const response = await fetch(
-          `${API_URL}/api/optimize/status/${state.threadId}?include_data=true`
+          `${API_URL}/api/optimize/status/${state.threadId}?include_data=true`,
+          { credentials: "include" }
         );
 
         if (!response.ok) {
@@ -265,13 +331,19 @@ export function useWorkflow(): UseWorkflowReturn {
           data: {
             userProfile: data.user_profile || prev.data.userProfile,
             jobPosting: data.job_posting || prev.data.jobPosting,
+            profileMarkdown: data.profile_markdown || prev.data.profileMarkdown,
+            jobMarkdown: data.job_markdown || prev.data.jobMarkdown,
             research: data.research || prev.data.research,
             gapAnalysis: data.gap_analysis || prev.data.gapAnalysis,
             qaHistory: data.qa_history || prev.data.qaHistory,
             resumeHtml: data.resume_html || prev.data.resumeHtml,
-            // Discovery data
+            // Discovery data - preserve messages if backend returns empty during active session
             discoveryPrompts: data.discovery_prompts || prev.data.discoveryPrompts,
-            discoveryMessages: data.discovery_messages || prev.data.discoveryMessages,
+            discoveryMessages: (data.discovery_messages?.length > 0)
+              ? data.discovery_messages
+              : (prev.data.discoveryMessages?.length > 0 && data.current_step === 'discovery')
+                ? prev.data.discoveryMessages
+                : data.discovery_messages || [],
             discoveredExperiences: data.discovered_experiences || prev.data.discoveredExperiences,
             discoveryConfirmed: data.discovery_confirmed ?? prev.data.discoveryConfirmed,
             discoveryExchanges: data.discovery_exchanges ?? prev.data.discoveryExchanges,
@@ -327,6 +399,7 @@ export function useWorkflow(): UseWorkflowReturn {
       const response = await fetch(`${API_URL}/api/optimize/${state.threadId}/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ text: answer }),
       });
 
@@ -348,6 +421,7 @@ export function useWorkflow(): UseWorkflowReturn {
       const response = await fetch(`${API_URL}/api/optimize/${state.threadId}/editor/update`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ html_content: html }),
       });
 
@@ -377,6 +451,7 @@ export function useWorkflow(): UseWorkflowReturn {
       const response = await fetch(`${API_URL}/api/optimize/${state.threadId}/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ format }),
       });
 
@@ -395,7 +470,8 @@ export function useWorkflow(): UseWorkflowReturn {
     if (!state.threadId) return;
 
     const response = await fetch(
-      `${API_URL}/api/optimize/status/${state.threadId}?include_data=true`
+      `${API_URL}/api/optimize/status/${state.threadId}?include_data=true`,
+      { credentials: "include" }
     );
 
     if (response.ok) {
@@ -413,6 +489,8 @@ export function useWorkflow(): UseWorkflowReturn {
         data: {
           userProfile: data.user_profile || prev.data.userProfile,
           jobPosting: data.job_posting || prev.data.jobPosting,
+          profileMarkdown: data.profile_markdown || prev.data.profileMarkdown,
+          jobMarkdown: data.job_markdown || prev.data.jobMarkdown,
           research: data.research || prev.data.research,
           gapAnalysis: data.gap_analysis || prev.data.gapAnalysis,
           qaHistory: data.qa_history || prev.data.qaHistory,
@@ -436,6 +514,7 @@ export function useWorkflow(): UseWorkflowReturn {
   return {
     ...state,
     startWorkflow,
+    resumeWorkflow,
     submitAnswer,
     updateResume,
     exportResume,

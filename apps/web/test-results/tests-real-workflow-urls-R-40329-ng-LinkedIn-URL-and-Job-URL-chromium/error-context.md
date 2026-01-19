@@ -1,0 +1,126 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - alert [ref=e2]
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]:
+          - heading "Resume Optimizer" [level=1] [ref=e7]
+          - paragraph [ref=e8]: AI-powered resume tailoring for your target job
+        - button "Start New" [ref=e9] [cursor=pointer]:
+          - img [ref=e10]
+          - text: Start New
+    - navigation "Workflow progress" [ref=e14]:
+      - list [ref=e15]:
+        - listitem [ref=e16]:
+          - generic [ref=e17]:
+            - button "Research - completed" [ref=e18] [cursor=pointer]:
+              - img [ref=e19]
+            - generic [ref=e21]: Research
+        - listitem [ref=e24]:
+          - generic [ref=e25]:
+            - button "Discovery - active" [ref=e26] [cursor=pointer]:
+              - generic [ref=e27]: "2"
+            - generic [ref=e28]: Discovery
+        - listitem [ref=e31]:
+          - generic [ref=e32]:
+            - button "Drafting - locked" [disabled] [ref=e33]:
+              - img [ref=e34]
+            - generic [ref=e36]: Drafting
+        - listitem [ref=e39]:
+          - generic [ref=e40]:
+            - button "Export - locked" [disabled] [ref=e41]:
+              - img [ref=e42]
+            - generic [ref=e44]: Export
+    - main [ref=e45]:
+      - generic [ref=e46]:
+        - generic [ref=e47]:
+          - heading "Gap Analysis" [level=3] [ref=e48]
+          - generic [ref=e49]:
+            - generic [ref=e50]:
+              - generic [ref=e51]:
+                - img [ref=e53]
+                - heading "Strengths (6)" [level=4] [ref=e55]
+              - list [ref=e56]:
+                - listitem [ref=e57]: 5+ years of engineering experience at Bloomberg, a top-tier tech and product-driven financial company
+                - listitem [ref=e58]: Full-stack experience as Senior Software Engineer at Bloomberg LP since 2019
+                - listitem [ref=e59]: Strong finance and analytical background (MBS Modeler, Risk Product Controller) demonstrates ability to understand complex systems and user needs
+                - listitem [ref=e60]: Experience at large-scale companies (Bloomberg, Societe Generale) serving millions of users
+                - listitem [ref=e61]: Proven ability to transition and learn new technologies (finance to engineering career pivot)
+                - listitem [ref=e62]: "Bloomberg's engineering culture shares similarities with OpenAI: fast-paced, product-driven, serving professional users"
+            - generic [ref=e63]:
+              - generic [ref=e64]:
+                - img [ref=e66]
+                - heading "Gaps (6)" [level=4] [ref=e68]
+              - list [ref=e69]:
+                - listitem [ref=e70]: Resume doesn't explicitly mention React, JavaScript, or Python - critical technologies for this role
+                - listitem [ref=e71]: No visible mention of relational databases (Postgres/MySQL) experience
+                - listitem [ref=e72]: Limited evidence of direct user engagement or user-centric product development
+                - listitem [ref=e73]: No explicit mention of AI/ML interest or exposure
+                - listitem [ref=e74]: Unclear if experience includes building customer-facing features vs. internal tools
+                - listitem [ref=e75]: Missing details about specific technologies used at Bloomberg and scale of applications built
+            - generic [ref=e76]:
+              - generic [ref=e77]:
+                - img [ref=e79]
+                - heading "Opportunities (0)" [level=4] [ref=e81]
+              - list [ref=e82]:
+                - listitem [ref=e83]: Discovery will help find opportunities
+        - generic [ref=e84]:
+          - generic [ref=e86]:
+            - generic [ref=e87]:
+              - generic [ref=e88]:
+                - generic [ref=e89]:
+                  - heading "Discovery Conversation" [level=3] [ref=e90]
+                  - paragraph [ref=e91]: Let's uncover experiences you may have overlooked
+                - generic [ref=e93]: Question 1 of 7
+              - generic [ref=e96]:
+                - generic [ref=e97]: "Exchanges: 0/3"
+                - generic [ref=e98]: (3 more to unlock completion)
+            - generic [ref=e101]:
+              - generic [ref=e103]: AI
+              - generic [ref=e104]:
+                - paragraph [ref=e105]: At Bloomberg, when you were building MBS models or working on financial systems, what's a time you had to completely rethink your technical approach because the users - traders, analysts, whoever - were struggling with what you originally built? Walk me through how you figured out what they actually needed.
+                - paragraph [ref=e106]: "Hint: Uncover user-centric development experience and iterative problem-solving in financial tech context"
+                - generic [ref=e107]:
+                  - generic [ref=e108]: Limited evidence of direct user engagement
+                  - generic [ref=e109]: No visible customer-facing features experience
+            - generic [ref=e110]:
+              - generic [ref=e111]:
+                - textbox "Share your experience... (Shift+Enter for new line)" [active] [ref=e112]
+                - generic [ref=e113]:
+                  - button "Send" [disabled] [ref=e114]
+                  - button "Skip" [ref=e115] [cursor=pointer]
+              - paragraph [ref=e116]: The more detail you share, the better we can tailor your resume.
+          - generic [ref=e117]:
+            - generic [ref=e118]:
+              - heading "Discovered Experiences" [level=4] [ref=e119]
+              - paragraph [ref=e120]: No experiences discovered yet. Keep answering questions!
+            - generic [ref=e121]:
+              - heading "What We're Looking For" [level=4] [ref=e122]
+              - generic [ref=e124]:
+                - heading "Your Strengths" [level=4] [ref=e125]
+                - list [ref=e126]:
+                  - listitem [ref=e127]:
+                    - generic [ref=e128]: +
+                    - generic [ref=e129]: 5+ years of engineering experience at Bloomberg, a top-tier tech and product-driven financial company
+                  - listitem [ref=e130]:
+                    - generic [ref=e131]: +
+                    - generic [ref=e132]: Full-stack experience as Senior Software Engineer at Bloomberg LP since 2019
+                  - listitem [ref=e133]:
+                    - generic [ref=e134]: +
+                    - generic [ref=e135]: Strong finance and analytical background (MBS Modeler, Risk Product Controller) demonstrates ability to understand complex systems and user needs
+            - generic [ref=e136]:
+              - heading "Tips" [level=4] [ref=e137]
+              - list [ref=e138]:
+                - listitem [ref=e139]:
+                  - generic [ref=e140]: "1."
+                  - generic [ref=e141]: Think about side projects, volunteer work, or informal leadership roles
+                - listitem [ref=e142]:
+                  - generic [ref=e143]: "2."
+                  - generic [ref=e144]: Include specific metrics or outcomes when possible
+                - listitem [ref=e145]:
+                  - generic [ref=e146]: "3."
+                  - generic [ref=e147]: Don't dismiss experiences from different industries
+```

@@ -103,7 +103,7 @@ class TestInputValidation:
         )
 
         assert not is_valid
-        assert any("Job URL is required" in e for e in errors)
+        assert any("Either job URL or pasted job description is required" in e for e in errors)
 
 
 # ============================================================================
@@ -367,16 +367,26 @@ class TestCompanyResearch:
         mock_llm_instance = MagicMock()
         mock_llm_instance.ainvoke = AsyncMock(return_value=MagicMock(
             content=json.dumps({
-                "company_overview": "TechCorp is a leading technology company",
-                "company_culture": "Collaborative and innovative culture",
-                "company_values": ["Innovation", "Collaboration"],
-                "tech_stack_details": [
-                    {"technology": "Python", "usage": "Backend", "importance": "critical"}
-                ],
-                "similar_profiles": [],
-                "company_news": ["Recent funding round"],
-                "industry_trends": ["AI/ML adoption"],
-                "hiring_patterns": "Looking for senior engineers",
+                "research": {
+                    "company_overview": "TechCorp is a leading technology company",
+                    "company_culture": "Collaborative and innovative culture",
+                    "company_values": ["Innovation", "Collaboration"],
+                    "tech_stack_details": [
+                        {"technology": "Python", "usage": "Backend", "importance": "critical"}
+                    ],
+                    "similar_profiles": [],
+                    "company_news": ["Recent funding round"],
+                    "industry_trends": ["AI/ML adoption"],
+                    "hiring_patterns": "Looking for senior engineers",
+                },
+                "gap_analysis": {
+                    "strengths": ["Python experience"],
+                    "gaps": [],
+                    "recommended_emphasis": [],
+                    "transferable_skills": [],
+                    "keywords_to_include": ["Python"],
+                    "potential_concerns": [],
+                },
             })
         ))
 
@@ -428,17 +438,27 @@ class TestSimilarHiresResearch:
         mock_llm_instance = MagicMock()
         mock_llm_instance.ainvoke = AsyncMock(return_value=MagicMock(
             content=json.dumps({
-                "company_overview": "TechCorp",
-                "company_culture": "Great culture",
-                "company_values": [],
-                "tech_stack_details": [],
-                "similar_profiles": [
-                    {"name": "Jane Smith", "headline": "Senior Engineer", "url": "linkedin.com/in/jane", "key_skills": []},
-                    {"name": "Bob Jones", "headline": "Staff Engineer", "url": "linkedin.com/in/bob", "key_skills": []},
-                ],
-                "company_news": [],
-                "industry_trends": [],
-                "hiring_patterns": "",
+                "research": {
+                    "company_overview": "TechCorp",
+                    "company_culture": "Great culture",
+                    "company_values": [],
+                    "tech_stack_details": [],
+                    "similar_profiles": [
+                        {"name": "Jane Smith", "headline": "Senior Engineer", "url": "linkedin.com/in/jane", "key_skills": []},
+                        {"name": "Bob Jones", "headline": "Staff Engineer", "url": "linkedin.com/in/bob", "key_skills": []},
+                    ],
+                    "company_news": [],
+                    "industry_trends": [],
+                    "hiring_patterns": "",
+                },
+                "gap_analysis": {
+                    "strengths": [],
+                    "gaps": [],
+                    "recommended_emphasis": [],
+                    "transferable_skills": [],
+                    "keywords_to_include": [],
+                    "potential_concerns": [],
+                },
             })
         ))
 

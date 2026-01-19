@@ -80,18 +80,12 @@ def get_checkpointer(checkpointer_type: Optional[str] = None):
             return MemorySaver()
 
     elif checkpointer_type == "postgres":
-        database_url = os.getenv("DATABASE_URL")
-        if not database_url:
-            logger.warning("DATABASE_URL not set, falling back to memory checkpointer")
-            return MemorySaver()
-
-        try:
-            from langgraph.checkpoint.postgres import PostgresSaver
-            logger.info("Using PostgresSaver for checkpointing")
-            return PostgresSaver.from_conn_string(database_url)
-        except ImportError:
-            logger.warning("langgraph-checkpoint-postgres not installed, falling back to memory")
-            return MemorySaver()
+        # NOTE: PostgresSaver doesn't support async (ainvoke), and AsyncPostgresSaver
+        # requires context manager usage which doesn't fit our workflow pattern.
+        # For now, fall back to MemorySaver which supports async operations.
+        # TODO: Implement proper async Postgres checkpointing with connection pooling
+        logger.warning("Postgres checkpointer not yet async-compatible, using MemorySaver")
+        return MemorySaver()
 
     elif checkpointer_type == "redis":
         redis_url = os.getenv("REDIS_URL")
@@ -239,6 +233,7 @@ def create_initial_state(
     job_url: Optional[str] = None,
     uploaded_resume_text: Optional[str] = None,
     uploaded_job_text: Optional[str] = None,
+    user_preferences: Optional[dict] = None,
 ) -> ResumeState:
     """Create initial state for a new workflow.
 
@@ -247,6 +242,7 @@ def create_initial_state(
         job_url: Target job posting URL
         uploaded_resume_text: Raw resume text if uploaded
         uploaded_job_text: Pasted job description if provided
+        user_preferences: User's writing style preferences
 
     Returns:
         Initialized ResumeState
@@ -277,6 +273,8 @@ def create_initial_state(
         discovered_experiences=[],
         discovery_confirmed=False,
         discovery_exchanges=0,
+        discovery_phase="setup",
+        pending_prompt_id=None,
 
         # Q&A
         qa_history=[],
@@ -307,6 +305,9 @@ def create_initial_state(
         ats_report=None,
         linkedin_suggestions=None,
         export_completed=False,
+
+        # User preferences
+        user_preferences=user_preferences,
 
         # Metadata
         current_step="ingest",

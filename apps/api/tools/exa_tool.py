@@ -10,6 +10,18 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
+# LangSmith tracing
+try:
+    from langsmith import traceable
+    LANGSMITH_AVAILABLE = True
+except ImportError:
+    LANGSMITH_AVAILABLE = False
+    # Fallback: no-op decorator
+    def traceable(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator if not args or callable(args[0]) else decorator
+
 logger = logging.getLogger(__name__)
 
 
@@ -70,6 +82,7 @@ class ExaContentParams(BaseModel):
 # ============================================================================
 
 @tool
+@traceable(name="exa_search", run_type="tool")
 def exa_search(
     query: str,
     num_results: int = 5,
@@ -142,11 +155,13 @@ def exa_search(
 
 
 @tool
+@traceable(name="exa_get_contents", run_type="tool")
 def exa_get_contents(
     urls: list[str],
     include_text: bool = True,
     include_highlights: bool = True,
     include_summary: bool = True,
+    livecrawl: str = "fallback",
 ) -> dict:
     """Fetch full content from specific URLs.
 
@@ -158,6 +173,7 @@ def exa_get_contents(
         include_text: Include full page text
         include_highlights: Include key excerpts
         include_summary: Include AI-generated summary
+        livecrawl: "always" for fresh content (use for LinkedIn), "fallback" for cached-first, "never" for cached only
 
     Returns:
         Dict with content for each URL
@@ -170,6 +186,7 @@ def exa_get_contents(
             text=include_text,
             highlights=include_highlights,
             summary=include_summary,
+            livecrawl=livecrawl,
         )
 
         return {
@@ -195,7 +212,174 @@ def exa_get_contents(
         }
 
 
+# LinkedIn Profile Schema for EXA structured extraction
+LINKEDIN_PROFILE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "Full name"},
+        "headline": {"type": "string", "description": "Professional headline"},
+        "summary": {"type": "string", "description": "About/summary section"},
+        "location": {"type": "string", "description": "Location"},
+        "experience": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "company": {"type": "string"},
+                    "position": {"type": "string"},
+                    "location": {"type": "string"},
+                    "start_date": {"type": "string"},
+                    "end_date": {"type": "string"},
+                    "is_current": {"type": "boolean"},
+                    "description": {"type": "string"},
+                }
+            }
+        },
+        "education": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "school": {"type": "string"},
+                    "degree": {"type": "string"},
+                    "field_of_study": {"type": "string"},
+                    "start_date": {"type": "string"},
+                    "end_date": {"type": "string"},
+                }
+            }
+        },
+        "skills": {
+            "type": "array",
+            "items": {"type": "string"}
+        },
+        "certifications": {
+            "type": "array",
+            "items": {"type": "string"}
+        }
+    }
+}
+
+# Job Posting Schema for EXA structured extraction
+JOB_POSTING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string", "description": "Job title"},
+        "company_name": {"type": "string", "description": "Company name"},
+        "location": {"type": "string", "description": "Job location"},
+        "description": {"type": "string", "description": "Full job description"},
+        "requirements": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Required qualifications"
+        },
+        "responsibilities": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Key responsibilities"
+        },
+        "tech_stack": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Technologies mentioned"
+        },
+        "benefits": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Benefits and perks"
+        },
+        "salary_range": {"type": "string", "description": "Salary range if mentioned"},
+        "employment_type": {"type": "string", "description": "Full-time, part-time, contract, etc."},
+        "experience_level": {"type": "string", "description": "Entry, mid, senior, etc."}
+    }
+}
+
+
+@traceable(name="exa_get_structured_content", run_type="tool")
+def exa_get_structured_content(
+    url: str,
+    content_type: Literal["linkedin_profile", "job_posting"],
+) -> dict:
+    """Fetch and extract structured data from a URL using EXA's schema feature.
+
+    This bypasses the need for LLM parsing by using EXA's built-in
+    structured extraction with JSON schema.
+
+    Args:
+        url: URL to fetch content from
+        content_type: Type of content to extract schema for
+
+    Returns:
+        Dict with structured data or error
+    """
+    try:
+        exa = get_exa_client()
+
+        # Select schema based on content type
+        schema = LINKEDIN_PROFILE_SCHEMA if content_type == "linkedin_profile" else JOB_POSTING_SCHEMA
+        query = "Extract professional profile information" if content_type == "linkedin_profile" else "Extract job posting details"
+
+        # Use EXA's structured summary with schema
+        # Use fallback mode: cached data if available, live crawl otherwise
+        # Note: "always" mode fails on many sites due to bot protection
+        livecrawl_mode = "fallback"
+        results = exa.get_contents(
+            urls=[url],
+            text=True,
+            highlights=True,
+            summary={
+                "query": query,
+                "schema": schema,
+            },
+            livecrawl=livecrawl_mode,
+        )
+
+        if not results.results:
+            return {
+                "success": False,
+                "error": "No content returned from URL",
+                "structured_data": None,
+                "raw_text": None,
+            }
+
+        result = results.results[0]
+
+        # Extract structured data from summary if available
+        # EXA returns summary as a JSON STRING when schema is provided
+        structured_data = None
+        if hasattr(result, "summary") and result.summary:
+            import json as json_module
+            if isinstance(result.summary, str):
+                # EXA returns JSON as a string - parse it
+                try:
+                    structured_data = json_module.loads(result.summary)
+                    logger.info(f"Successfully parsed EXA structured summary for {url}")
+                except json_module.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse EXA summary as JSON: {e}")
+                    structured_data = None
+            elif isinstance(result.summary, dict):
+                # Already a dict (shouldn't happen but handle it)
+                structured_data = result.summary.get("parsed", result.summary)
+
+        return {
+            "success": True,
+            "structured_data": structured_data,
+            "raw_text": result.text,
+            "title": result.title,
+            "url": result.url,
+        }
+
+    except Exception as e:
+        logger.error(f"EXA structured extraction failed for {url}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "structured_data": None,
+            "raw_text": None,
+        }
+
+
 @tool
+@traceable(name="exa_find_similar", run_type="tool")
 def exa_find_similar(
     url: str,
     num_results: int = 5,
@@ -261,6 +445,7 @@ def exa_find_similar(
 # Specialized Search Functions (not LangChain tools, for direct use)
 # ============================================================================
 
+@traceable(name="fetch_linkedin_profile", run_type="tool")
 async def fetch_linkedin_profile(linkedin_url: str) -> dict:
     """Fetch and parse a LinkedIn profile URL.
 
@@ -275,6 +460,7 @@ async def fetch_linkedin_profile(linkedin_url: str) -> dict:
         "include_text": True,
         "include_highlights": True,
         "include_summary": True,
+        "livecrawl": "always",  # Always fetch fresh - profiles change
     })
 
     if result["success"] and result["contents"]:
@@ -294,6 +480,7 @@ async def fetch_linkedin_profile(linkedin_url: str) -> dict:
     }
 
 
+@traceable(name="fetch_job_posting", run_type="tool")
 async def fetch_job_posting(job_url: str) -> dict:
     """Fetch and parse a job posting URL.
 
@@ -308,6 +495,7 @@ async def fetch_job_posting(job_url: str) -> dict:
         "include_text": True,
         "include_highlights": True,
         "include_summary": True,
+        "livecrawl": "fallback",  # Use cached if available, jobs don't change as often
     })
 
     if result["success"] and result["contents"]:
@@ -328,6 +516,7 @@ async def fetch_job_posting(job_url: str) -> dict:
     }
 
 
+@traceable(name="research_company", run_type="tool")
 async def research_company(company_name: str) -> dict:
     """Research a company's culture, values, and tech stack.
 
@@ -366,6 +555,7 @@ async def research_company(company_name: str) -> dict:
     }
 
 
+@traceable(name="find_similar_employees", run_type="tool")
 async def find_similar_employees(
     company_name: str,
     job_title: str,

@@ -30,6 +30,10 @@ export interface UseEditorAssistReturn {
     selectedText: string,
     instructions?: string
   ) => Promise<void>;
+  requestCustomSuggestion: (
+    selectedText: string,
+    userMessage: string
+  ) => Promise<EditorSuggestion | null>;
   regenerateSection: (section: string, currentContent: string) => Promise<string>;
   clearSuggestion: () => void;
 }
@@ -138,11 +142,69 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
     setError(null);
   }, []);
 
+  // Custom chat-style request that returns the suggestion for chat history
+  const requestCustomSuggestion = useCallback(
+    async (selectedText: string, userMessage: string): Promise<EditorSuggestion | null> => {
+      if (!threadId) {
+        setError("No active workflow");
+        return null;
+      }
+
+      if (!selectedText.trim()) {
+        setError("No text selected");
+        return null;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(`${API_URL}/api/optimize/${threadId}/editor/assist`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "custom",
+            selected_text: selectedText,
+            instructions: userMessage,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || "Failed to get suggestion");
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+          const result: EditorSuggestion = {
+            success: true,
+            original: selectedText,
+            suggestion: data.suggestion,
+            action: "custom",
+          };
+          setSuggestion(result);
+          return result;
+        } else {
+          setError(data.error || "Failed to generate suggestion");
+          return null;
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Unknown error");
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [threadId]
+  );
+
   return {
     suggestion,
     isLoading,
     error,
     requestSuggestion,
+    requestCustomSuggestion,
     regenerateSection,
     clearSuggestion,
   };

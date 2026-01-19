@@ -60,9 +60,10 @@ Your task is to create a tailored resume that:
 4. Highlights transferable skills and addresses gaps strategically
 5. Uses strong action verbs and concise bullet points
 6. Is tailored specifically to the target job
+7. Follows the user's writing style preferences (if provided)
 
 WRITING GUIDELINES:
-- Use first-person implied (no "I" but write as if candidate is speaking)
+- Use first-person implied (no "I" but write as if candidate is speaking) unless user prefers first person
 - Each bullet should start with a strong action verb
 - Quantify with numbers: "increased by 40%", "managed team of 5", "reduced time by 2 hours"
 - Keep bullets to 1-2 lines each
@@ -70,6 +71,14 @@ WRITING GUIDELINES:
 - Include ALL relevant keywords from the job posting naturally
 - Don't use buzzwords like "synergy", "leverage", "utilize" excessively
 - Vary sentence structure to sound natural
+
+USER STYLE PREFERENCES (apply these if provided):
+- Tone: formal/conversational/confident/humble
+- Structure: bullets/paragraphs/mixed
+- Sentence length: concise/detailed/mixed
+- First person: whether to use "I" statements
+- Quantification: heavy_metrics/qualitative/balanced
+- Achievement focus: whether to emphasize accomplishments over responsibilities
 
 OUTPUT FORMAT (HTML for Tiptap editor):
 
@@ -161,6 +170,7 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
     qa_history = state.get("qa_history", [])
     research = state.get("research", {})
     discovered_experiences = state.get("discovered_experiences", [])
+    user_preferences = state.get("user_preferences", {})
 
     if not user_profile or not job_posting:
         return {
@@ -173,7 +183,7 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
 
         # Build comprehensive drafting context
         context = _build_drafting_context(
-            user_profile, job_posting, gap_analysis, qa_history, research, discovered_experiences
+            user_profile, job_posting, gap_analysis, qa_history, research, discovered_experiences, user_preferences
         )
 
         messages = [
@@ -224,7 +234,7 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
             "draft_change_log": [],
             "draft_current_version": "1.0",
             "draft_approved": False,
-            "current_step": "draft",
+            "current_step": "editor",  # Set to editor so frontend shows ResumeEditor
             "sub_step": "suggestions_ready",
             "updated_at": datetime.now().isoformat(),
         }
@@ -244,8 +254,12 @@ def _build_drafting_context(
     qa_history: list,
     research: dict,
     discovered_experiences: list,
+    user_preferences: dict | None = None,
 ) -> str:
     """Build comprehensive context for resume drafting."""
+    # Format user preferences section
+    prefs_section = _format_user_preferences(user_preferences)
+
     context = f"""
 CANDIDATE INFORMATION:
 Name: {user_profile.get('name', 'Candidate')}
@@ -311,6 +325,10 @@ DISCOVERED EXPERIENCES (from discovery conversation):
 COMPANY INSIGHTS:
 Culture: {research.get('company_culture', 'N/A')[:500] if research else 'N/A'}
 Values: {', '.join(research.get('company_values', [])) if research else 'N/A'}
+
+---
+
+{prefs_section}
 """
     return context
 
@@ -540,6 +558,62 @@ Relevant to: {', '.join(exp.get('mapped_requirements', []))}
         formatted.append(entry)
 
     return "\n---\n".join(formatted)
+
+
+def _format_user_preferences(preferences: dict | None) -> str:
+    """Format user preferences for drafting context."""
+    if not preferences:
+        return "USER STYLE PREFERENCES: None specified (use defaults)"
+
+    lines = ["USER STYLE PREFERENCES:"]
+
+    tone_map = {
+        "formal": "Use professional, structured language",
+        "conversational": "Use friendly, approachable language",
+        "confident": "Use bold, assertive language",
+        "humble": "Use modest, understated language",
+    }
+    if preferences.get("tone"):
+        lines.append(f"- Tone: {tone_map.get(preferences['tone'], preferences['tone'])}")
+
+    structure_map = {
+        "bullets": "Use concise bullet points throughout",
+        "paragraphs": "Use flowing narrative paragraphs",
+        "mixed": "Combine bullets and paragraphs as appropriate",
+    }
+    if preferences.get("structure"):
+        lines.append(f"- Structure: {structure_map.get(preferences['structure'], preferences['structure'])}")
+
+    sentence_map = {
+        "concise": "Keep sentences short and punchy",
+        "detailed": "Use comprehensive, detailed explanations",
+        "mixed": "Vary sentence length by context",
+    }
+    if preferences.get("sentence_length"):
+        lines.append(f"- Sentence style: {sentence_map.get(preferences['sentence_length'], preferences['sentence_length'])}")
+
+    if preferences.get("first_person") is True:
+        lines.append("- Voice: Use first-person 'I' statements (e.g., 'I led a team of 5')")
+    elif preferences.get("first_person") is False:
+        lines.append("- Voice: Use implied first-person without 'I' (e.g., 'Led a team of 5')")
+
+    quant_map = {
+        "heavy_metrics": "Emphasize numbers, percentages, and metrics heavily",
+        "qualitative": "Focus on descriptive impact rather than numbers",
+        "balanced": "Balance metrics with qualitative descriptions",
+    }
+    if preferences.get("quantification_preference"):
+        lines.append(f"- Quantification: {quant_map.get(preferences['quantification_preference'], preferences['quantification_preference'])}")
+
+    if preferences.get("achievement_focus") is True:
+        lines.append("- Focus: Emphasize accomplishments and results over daily responsibilities")
+    elif preferences.get("achievement_focus") is False:
+        lines.append("- Focus: Include both responsibilities and achievements")
+
+    if len(lines) == 1:
+        return "USER STYLE PREFERENCES: None specified (use defaults)"
+
+    return "\n".join(lines)
 
 
 def increment_version(current_version: str) -> str:

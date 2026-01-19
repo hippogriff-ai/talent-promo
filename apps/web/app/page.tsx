@@ -11,6 +11,20 @@ const RECENT_LINKEDIN_KEY = "talent_promo:recent_linkedin";
 const RECENT_JOB_KEY = "talent_promo:recent_job";
 const MAX_RECENT = 2;
 
+// Fun human verification questions - bots can't answer these!
+const HUMAN_CHALLENGES = [
+  { question: "What sound does a cat make?", answers: ["meow", "mew", "purr"] },
+  { question: "What color is a ripe banana?", answers: ["yellow"] },
+  { question: "How many legs does a dog have?", answers: ["4", "four"] },
+  { question: "What do cows drink?", answers: ["water"] },  // Trick question - most say "milk"
+  { question: "What's the opposite of 'hot'?", answers: ["cold", "cool"] },
+  { question: "What day comes after Monday?", answers: ["tuesday", "tues"] },
+  { question: "What do you call a baby dog?", answers: ["puppy", "pup"] },
+  { question: "Is water wet? (yes/no)", answers: ["yes", "no", "both"] },  // Philosophy!
+  { question: "What noise does a duck make?", answers: ["quack"] },
+  { question: "How many eyes do you have?", answers: ["2", "two"] },
+];
+
 const features = [
   {
     title: "Research",
@@ -83,6 +97,13 @@ export default function Home() {
   const [jobText, setJobText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [honeypot, setHoneypot] = useState("");  // Bot trap - should remain empty
+
+  // Human verification challenge - initialize to 0 on server, randomize on client to avoid hydration mismatch
+  const [challengeIndex, setChallengeIndex] = useState(0);
+  const [challengeAnswer, setChallengeAnswer] = useState("");
+  const [challengePassed, setChallengePassed] = useState(false);
+  const currentChallenge = HUMAN_CHALLENGES[challengeIndex];
 
   // Recent URLs for quick selection
   const [recentLinkedin, setRecentLinkedin] = useState<string[]>([]);
@@ -93,6 +114,9 @@ export default function Home() {
   const jobInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // Randomize challenge on client side to avoid hydration mismatch
+    setChallengeIndex(Math.floor(Math.random() * HUMAN_CHALLENGES.length));
+
     // Check if first visit
     const hasVisited = localStorage.getItem(FIRST_VISIT_KEY);
     if (!hasVisited) {
@@ -129,6 +153,18 @@ export default function Home() {
     }
   };
 
+  const checkChallengeAnswer = () => {
+    const normalized = challengeAnswer.toLowerCase().trim();
+    const isCorrect = currentChallenge.answers.some(a => normalized === a.toLowerCase());
+    setChallengePassed(isCorrect);
+    if (!isCorrect && challengeAnswer.trim()) {
+      setError("Hmm, that doesn't seem right. Try again!");
+    } else {
+      setError("");
+    }
+    return isCorrect;
+  };
+
   const canSubmit = () => {
     const hasProfile = inputMode === "linkedin"
       ? linkedinUrl && isValidUrl(linkedinUrl)
@@ -136,11 +172,19 @@ export default function Home() {
     const hasJob = jobInputMode === "url"
       ? jobUrl && isValidUrl(jobUrl)
       : jobText.trim().length > 50;
-    return hasProfile && hasJob && !isSubmitting;
+    return hasProfile && hasJob && challengePassed && !isSubmitting;
   };
 
   const handleSubmit = async () => {
     setError("");
+
+    // Honeypot check - bots will fill this hidden field
+    if (honeypot) {
+      // Silently fail for bots - looks like success but does nothing
+      setIsSubmitting(true);
+      setTimeout(() => setIsSubmitting(false), 2000);
+      return;
+    }
 
     if (!canSubmit()) {
       setError("Please fill in all required fields with valid URLs");
@@ -224,7 +268,7 @@ export default function Home() {
                   <svg className="w-5 h-5 mr-2 text-green-500" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
-                  No sign-up
+                  No password needed
                 </div>
                 <div className="flex items-center">
                   <svg className="w-5 h-5 mr-2 text-green-500" fill="currentColor" viewBox="0 0 20 20">
@@ -237,9 +281,12 @@ export default function Home() {
 
             {/* Right side - Input Form */}
             <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 sm:p-8">
-              <h2 className="text-xl font-semibold text-gray-900 mb-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
                 Start Your Optimization
               </h2>
+              <p className="text-gray-600 text-sm mb-6">
+                Enter your profile and target job to get started.
+              </p>
 
               {/* Error message */}
               {error && (
@@ -247,6 +294,18 @@ export default function Home() {
                   {error}
                 </div>
               )}
+
+              {/* Honeypot field - hidden from humans, visible to bots */}
+              <div className="absolute -left-[9999px]" aria-hidden="true">
+                <input
+                  type="text"
+                  name="website"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={honeypot}
+                  onChange={(e) => setHoneypot(e.target.value)}
+                />
+              </div>
 
               {/* Profile Input */}
               <div className="mb-6">
@@ -414,6 +473,53 @@ export default function Home() {
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none"
                   />
                 )}
+              </div>
+
+              {/* Human Verification - Fun challenge to stop bots */}
+              <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-100">
+                <div className="flex items-center mb-3">
+                  <span className="text-lg mr-2">🤖</span>
+                  <label className="text-sm font-medium text-gray-700">
+                    Quick human check
+                  </label>
+                  {challengePassed && (
+                    <span className="ml-2 text-green-600 text-sm font-medium flex items-center">
+                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      You&apos;re human!
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-600 mb-2 italic">{currentChallenge.question}</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Your answer..."
+                    value={challengeAnswer}
+                    onChange={(e) => {
+                      setChallengeAnswer(e.target.value);
+                      if (challengePassed) setChallengePassed(false);  // Reset if they change answer
+                    }}
+                    onBlur={checkChallengeAnswer}
+                    onKeyDown={(e) => e.key === "Enter" && checkChallengeAnswer()}
+                    disabled={challengePassed}
+                    className={`flex-1 px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all ${
+                      challengePassed
+                        ? "bg-green-50 border-green-300 text-green-700"
+                        : "border-gray-200"
+                    }`}
+                  />
+                  {!challengePassed && (
+                    <button
+                      type="button"
+                      onClick={checkChallengeAnswer}
+                      className="px-4 py-2 text-sm font-medium text-purple-700 bg-purple-100 rounded-lg hover:bg-purple-200 transition-all"
+                    >
+                      Check
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Submit Button */}

@@ -1,0 +1,83 @@
+{
+  "metadata": {
+    "description": "Senior FAANG engineer with strong distributed systems background",
+    "difficulty": "medium",
+    "edge_cases": ["Multiple companies", "Current role indicator", "Tech stack extraction"],
+    "source": "synthetic based on common LinkedIn patterns"
+  },
+  "input": "John Smith\nSenior Software Engineer at Google\n\nSan Francisco Bay Area • 500+ connections\n\nAbout\nPassionate software engineer with 8+ years of experience building scalable distributed systems.\nCurrently leading a team of 5 engineers working on Google Cloud infrastructure.\nStrong background in system design, performance optimization, and mentoring junior engineers.\nPreviously at Facebook and Amazon. Stanford CS grad.\n\nExperience\n\nSenior Software Engineer\nGoogle · Full-time\nJan 2021 - Present · 3 yrs\nMountain View, California\n\nLeading development of distributed storage systems handling petabytes of data.\n• Designed and implemented a new caching layer reducing latency by 40%\n• Mentored 3 junior engineers, all promoted within 18 months\n• Led migration of 50+ services to Kubernetes\nTechnologies: Go, C++, Kubernetes, Spanner, BigQuery\n\nSoftware Engineer II\nFacebook (Meta) · Full-time\nJun 2018 - Dec 2020 · 2 yrs 7 mos\nMenlo Park, California\n\nBuilt and maintained critical news feed ranking infrastructure.\n• Improved feed relevance by 15% through ML model improvements\n• Reduced serving latency by 30% through caching optimizations\n• On-call rotation for tier-0 service with 99.99% SLA\nTechnologies: Python, C++, PyTorch, Presto\n\nSoftware Development Engineer\nAmazon · Full-time\nJul 2016 - May 2018 · 1 yr 11 mos\nSeattle, Washington\n\nDeveloped backend services for Prime Video streaming platform.\n• Built real-time analytics pipeline processing 1M+ events/second\n• Implemented A/B testing framework used by 20+ teams\nTechnologies: Java, DynamoDB, Lambda, Kinesis\n\nEducation\n\nStanford University\nBS, Computer Science\n2012 - 2016\n\nSkills\nDistributed Systems • System Design • Go • Python • C++ • Kubernetes • AWS •\nMachine Learning • Technical Leadership • Mentoring",
+  "expected": {
+    "name": "John Smith",
+    "headline": "Senior Software Engineer at Google",
+    "summary": "Passionate software engineer with 8+ years of experience building scalable distributed systems. Currently leading a team of 5 engineers working on Google Cloud infrastructure. Strong background in system design, performance optimization, and mentoring junior engineers. Previously at Facebook and Amazon. Stanford CS grad.",
+    "location": "San Francisco Bay Area",
+    "experience": [
+      {
+        "company": "Google",
+        "position": "Senior Software Engineer",
+        "location": "Mountain View, California",
+        "start_date": "Jan 2021",
+        "end_date": null,
+        "is_current": true,
+        "achievements": [
+          "Designed and implemented a new caching layer reducing latency by 40%",
+          "Mentored 3 junior engineers, all promoted within 18 months",
+          "Led migration of 50+ services to Kubernetes"
+        ],
+        "technologies": ["Go", "C++", "Kubernetes", "Spanner", "BigQuery"],
+        "description": "Leading development of distributed storage systems handling petabytes of data."
+      },
+      {
+        "company": "Facebook (Meta)",
+        "position": "Software Engineer II",
+        "location": "Menlo Park, California",
+        "start_date": "Jun 2018",
+        "end_date": "Dec 2020",
+        "is_current": false,
+        "achievements": [
+          "Improved feed relevance by 15% through ML model improvements",
+          "Reduced serving latency by 30% through caching optimizations",
+          "On-call rotation for tier-0 service with 99.99% SLA"
+        ],
+        "technologies": ["Python", "C++", "PyTorch", "Presto"],
+        "description": "Built and maintained critical news feed ranking infrastructure."
+      },
+      {
+        "company": "Amazon",
+        "position": "Software Development Engineer",
+        "location": "Seattle, Washington",
+        "start_date": "Jul 2016",
+        "end_date": "May 2018",
+        "is_current": false,
+        "achievements": [
+          "Built real-time analytics pipeline processing 1M+ events/second",
+          "Implemented A/B testing framework used by 20+ teams"
+        ],
+        "technologies": ["Java", "DynamoDB", "Lambda", "Kinesis"],
+        "description": "Developed backend services for Prime Video streaming platform."
+      }
+    ],
+    "education": [
+      {
+        "institution": "Stanford University",
+        "degree": "BS",
+        "field_of_study": "Computer Science",
+        "start_date": "2012",
+        "end_date": "2016"
+      }
+    ],
+    "skills": [
+      "Distributed Systems",
+      "System Design",
+      "Go",
+      "Python",
+      "C++",
+      "Kubernetes",
+      "AWS",
+      "Machine Learning",
+      "Technical Leadership",
+      "Mentoring"
+    ],
+    "certifications": []
+  }
+}

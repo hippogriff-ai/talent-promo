@@ -36,7 +36,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 # Note: Using absolute import from routers for compatibility with pytest pythonpath config
 # When running the API, use: cd apps/api && uvicorn main:app --reload
-from routers import agents, documents, jobs, research, research_agent, optimize  # noqa: E402
+from routers import agents, documents, jobs, research, research_agent, optimize, arena, filesystem  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,8 @@ app.include_router(research_agent.router)
 app.include_router(jobs.router)
 app.include_router(documents.router)
 app.include_router(optimize.router)  # LangGraph resume optimization workflow
+app.include_router(arena.router)  # Arena A/B comparison
+app.include_router(filesystem.router)  # Virtual filesystem with Linux-like commands
 
 
 @app.get("/")

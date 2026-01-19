@@ -2,6 +2,50 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
+// Mock auth and preferences hooks
+vi.mock("../../hooks/useAuth", () => ({
+  useAuth: () => ({
+    isAuthenticated: false,
+    user: null,
+    isLoading: false,
+    login: vi.fn(),
+    verify: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+  }),
+}));
+
+vi.mock("../../hooks/usePreferences", () => ({
+  usePreferences: () => ({
+    preferences: {},
+    isLoading: false,
+    error: null,
+    updatePreferences: vi.fn(),
+    resetPreferences: vi.fn(),
+    recordEvent: vi.fn(),
+    refresh: vi.fn(),
+  }),
+}));
+
+vi.mock("../../hooks/useSuggestionTracking", () => ({
+  useSuggestionTracking: () => ({
+    trackAccept: vi.fn(),
+    trackReject: vi.fn(),
+    wrapAcceptHandler: vi.fn((fn) => fn),
+    wrapRejectHandler: vi.fn((fn) => fn),
+  }),
+}));
+
+vi.mock("../../hooks/useEditTracking", () => ({
+  useEditTracking: () => ({
+    trackEdit: vi.fn(),
+    trackTextChange: vi.fn(),
+    trackSectionReorder: vi.fn(),
+    trackFormattingChange: vi.fn(),
+    flush: vi.fn(),
+  }),
+}));
+
 // Mock the hooks
 vi.mock("../../hooks/useDraftingStorage", () => ({
   useDraftingStorage: () => ({

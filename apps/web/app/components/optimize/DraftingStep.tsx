@@ -14,8 +14,11 @@ import {
   DraftValidation,
 } from "../../hooks/useDraftingStorage";
 import { useSuggestions, useDraftingState } from "../../hooks/useSuggestions";
+import { useSuggestionTracking, TrackedSuggestion } from "../../hooks/useSuggestionTracking";
+import { useEditTracking } from "../../hooks/useEditTracking";
 import { SuggestionList } from "./SuggestionCard";
 import VersionHistory from "./VersionHistory";
+import PreferenceSidebar from "./PreferenceSidebar";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -89,6 +92,10 @@ export default function DraftingStep({
     approveDraft,
   } = useDraftingState(threadId);
 
+  // Preference tracking hooks
+  const { trackAccept, trackReject } = useSuggestionTracking({ threadId });
+  const { trackTextChange, flush: flushEdits } = useEditTracking({ threadId });
+
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -119,6 +126,9 @@ export default function DraftingStep({
   const pendingCount = suggestions.filter((s) => s.status === "pending").length;
   const canApprove = pendingCount === 0;
 
+  // Track previous content for edit tracking
+  const [previousContent, setPreviousContent] = useState(initialHtml);
+
   // Initialize Tiptap editor
   const editor = useEditor({
     extensions: [
@@ -141,6 +151,14 @@ export default function DraftingStep({
         class:
           "prose prose-sm max-w-none focus:outline-none min-h-[500px] px-6 py-4",
       },
+    },
+    onUpdate: ({ editor }) => {
+      // Track text changes for preference learning
+      const newText = editor.getText();
+      if (previousContent !== newText) {
+        trackTextChange(previousContent, newText);
+        setPreviousContent(newText);
+      }
     },
   });
 
@@ -179,10 +197,24 @@ export default function DraftingStep({
 
   // Handle suggestion accept
   const handleAccept = async (id: string) => {
+    const suggestion = suggestions.find((s) => s.id === id);
     const result = await acceptSuggestion(id);
     if (result) {
       storage.acceptSuggestion(id);
       showSaveMessage(`Applied suggestion (v${result.version})`);
+
+      // Track acceptance for preference learning
+      if (suggestion) {
+        const tracked: TrackedSuggestion = {
+          id: suggestion.id,
+          location: suggestion.location,
+          original_text: suggestion.originalText,
+          proposed_text: suggestion.proposedText,
+          rationale: suggestion.rationale,
+        };
+        trackAccept(tracked);
+      }
+
       // Refresh editor content
       const newState = await fetchDraftingState();
       if (newState?.resume_html && editor) {
@@ -193,10 +225,23 @@ export default function DraftingStep({
 
   // Handle suggestion decline
   const handleDecline = async (id: string) => {
+    const suggestion = suggestions.find((s) => s.id === id);
     const result = await declineSuggestion(id);
     if (result) {
       storage.declineSuggestion(id);
       showSaveMessage(`Declined suggestion (v${result.version})`);
+
+      // Track rejection for preference learning
+      if (suggestion) {
+        const tracked: TrackedSuggestion = {
+          id: suggestion.id,
+          location: suggestion.location,
+          original_text: suggestion.originalText,
+          proposed_text: suggestion.proposedText,
+          rationale: suggestion.rationale,
+        };
+        trackReject(tracked);
+      }
     }
   };
 
@@ -220,6 +265,9 @@ export default function DraftingStep({
 
     setIsSaving(true);
     const html = editor.getHTML();
+
+    // Flush pending edit tracking events before saving
+    await flushEdits();
 
     const result = await saveManually(html);
     if (result) {
@@ -510,6 +558,9 @@ export default function DraftingStep({
           </div>
         </div>
       </div>
+
+      {/* Preference Sidebar */}
+      <PreferenceSidebar />
     </div>
   );
 }

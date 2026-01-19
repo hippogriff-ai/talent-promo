@@ -8,6 +8,7 @@ import {
   GapAnalysis,
   WorkflowStep,
 } from "../../hooks/useWorkflow";
+import { ProfileEditorModal } from "./ProfileEditorModal";
 
 interface ProgressMessage {
   timestamp: string;
@@ -20,11 +21,16 @@ interface ResearchStepProps {
   currentStep: WorkflowStep;
   userProfile: UserProfile | null;
   jobPosting: JobPosting | null;
+  // Raw markdown from EXA for display/editing
+  profileMarkdown: string | null;
+  jobMarkdown: string | null;
   research: ResearchFindings | null;
   gapAnalysis: GapAnalysis | null;
   progressMessages?: ProgressMessage[];
   onUpdateProfile?: (profile: UserProfile) => void;
   onUpdateJob?: (job: JobPosting) => void;
+  onUpdateProfileMarkdown?: (markdown: string) => void;
+  onUpdateJobMarkdown?: (markdown: string) => void;
 }
 
 // Modal component for viewing/editing profile or job
@@ -363,15 +369,22 @@ export default function ResearchStep({
   currentStep,
   userProfile,
   jobPosting,
+  profileMarkdown,
+  jobMarkdown,
   research,
   gapAnalysis,
   progressMessages = [],
   onUpdateProfile,
   onUpdateJob,
+  onUpdateProfileMarkdown,
+  onUpdateJobMarkdown,
 }: ResearchStepProps) {
   // Modal state
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [jobModalOpen, setJobModalOpen] = useState(false);
+  // New markdown editor modal state
+  const [profileMarkdownModalOpen, setProfileMarkdownModalOpen] = useState(false);
+  const [jobMarkdownModalOpen, setJobMarkdownModalOpen] = useState(false);
 
   // Determine step statuses based on what data is available
   const profileFetched = !!userProfile;
@@ -501,16 +514,31 @@ export default function ResearchStep({
               </svg>
               Your Profile
             </h3>
-            {userProfile && (
-              <button
-                onClick={() => setProfileModalOpen(true)}
-                className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
-              >
-                Show More
-                <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-              </button>
+            {(userProfile || profileMarkdown) && (
+              <div className="flex items-center gap-2">
+                {profileMarkdown && (
+                  <button
+                    onClick={() => setProfileMarkdownModalOpen(true)}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
+                  >
+                    View/Edit Full Profile
+                    <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                )}
+                {userProfile && !profileMarkdown && (
+                  <button
+                    onClick={() => setProfileModalOpen(true)}
+                    className="text-sm text-gray-500 hover:text-gray-700 font-medium flex items-center"
+                  >
+                    Show JSON
+                    <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             )}
           </div>
           {userProfile ? (
@@ -665,6 +693,28 @@ export default function ResearchStep({
         data={jobPosting}
         type="job"
         onSave={onUpdateJob ? (data) => onUpdateJob(data as JobPosting) : undefined}
+      />
+
+      {/* Markdown Editor Modals */}
+      <ProfileEditorModal
+        isOpen={profileMarkdownModalOpen}
+        onClose={() => setProfileMarkdownModalOpen(false)}
+        title="Your LinkedIn Profile"
+        markdown={profileMarkdown}
+        onSave={(updatedMarkdown) => {
+          onUpdateProfileMarkdown?.(updatedMarkdown);
+          setProfileMarkdownModalOpen(false);
+        }}
+      />
+      <ProfileEditorModal
+        isOpen={jobMarkdownModalOpen}
+        onClose={() => setJobMarkdownModalOpen(false)}
+        title="Job Posting"
+        markdown={jobMarkdown}
+        onSave={(updatedMarkdown) => {
+          onUpdateJobMarkdown?.(updatedMarkdown);
+          setJobMarkdownModalOpen(false);
+        }}
       />
 
       {/* Research Findings */}

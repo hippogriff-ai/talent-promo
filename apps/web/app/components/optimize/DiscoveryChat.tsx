@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { DiscoveryMessage, DiscoveryPrompt } from "../../hooks/useDiscoveryStorage";
 
 interface DiscoveryChatProps {
@@ -38,11 +38,30 @@ export default function DiscoveryChat({
   const [response, setResponse] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prevMessageCount = useRef(messages.length);
+  const prevPendingQuestion = useRef<string | null>(null);
 
-  // Auto-scroll to bottom
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Filter out the pending prompt from messages if it appears there
+  // (avoid showing same question twice)
+  const filteredMessages = useMemo(() => {
+    if (!pendingPrompt) return messages;
+    return messages.filter(msg =>
+      !(msg.role === "agent" && msg.content === pendingPrompt.question)
+    );
   }, [messages, pendingPrompt]);
+
+  // Auto-scroll only when content actually changes
+  useEffect(() => {
+    const hasNewMessages = filteredMessages.length > prevMessageCount.current;
+    const hasNewPrompt = pendingPrompt?.question !== prevPendingQuestion.current;
+
+    if (hasNewMessages || hasNewPrompt) {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+
+    prevMessageCount.current = filteredMessages.length;
+    prevPendingQuestion.current = pendingPrompt?.question ?? null;
+  }, [filteredMessages.length, pendingPrompt?.question]);
 
   // Focus textarea when prompt appears
   useEffect(() => {
@@ -128,7 +147,7 @@ export default function DiscoveryChat({
 
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg, idx) => (
+        {filteredMessages.map((msg, idx) => (
           <div key={idx} className="space-y-1">
             {msg.role === "agent" ? (
               // Agent message
@@ -193,7 +212,7 @@ export default function DiscoveryChat({
         )}
 
         {/* Waiting indicator when no pending prompt */}
-        {!pendingPrompt && messages.length > 0 && (
+        {!pendingPrompt && filteredMessages.length > 0 && (
           <div className="flex items-start space-x-3">
             <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
               <span className="text-purple-600 text-sm font-medium">AI</span>

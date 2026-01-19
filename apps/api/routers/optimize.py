@@ -9,12 +9,13 @@ Updated for LangGraph 1.0+ patterns:
 import asyncio
 import json
 import logging
+import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header, Cookie
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
 from langgraph.types import Command
@@ -23,10 +24,33 @@ from workflow.graph import get_workflow, create_initial_state
 from workflow.nodes.editor import get_editor_suggestion, regenerate_section
 from workflow.nodes.export import export_resume
 from validators import validate_urls, validate_linkedin_url, validate_job_url
+from services.thread_metadata import get_metadata_service, ThreadMetadataService
+from middleware.rate_limit import check_rate_limit
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/optimize", tags=["resume-optimization"])
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def _parse_timestamp(timestamp_str: str) -> Optional[datetime]:
+    """Parse ISO timestamp, handling Z suffix for UTC.
+
+    Args:
+        timestamp_str: ISO format timestamp string (e.g., "2025-01-11T12:00:00Z")
+
+    Returns:
+        Parsed datetime or None if invalid/empty.
+    """
+    if not timestamp_str:
+        return None
+    try:
+        return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
 
 
 # ============================================================================
@@ -39,6 +63,7 @@ class StartWorkflowRequest(BaseModel):
     job_url: Optional[str] = None
     resume_text: Optional[str] = None  # If uploaded instead of LinkedIn
     job_text: Optional[str] = None  # If pasted instead of job URL
+    user_preferences: Optional[dict] = None  # User's writing style preferences
 
 
 class WorkflowProgressStep(BaseModel):
@@ -86,6 +111,9 @@ class WorkflowStateResponse(BaseModel):
     # Data snapshots (optional, only included when requested)
     user_profile: Optional[dict] = None
     job_posting: Optional[dict] = None
+    # Raw markdown for display/editing
+    profile_markdown: Optional[str] = None
+    job_markdown: Optional[str] = None
     research: Optional[dict] = None
     gap_analysis: Optional[dict] = None
     resume_html: Optional[str] = None
@@ -205,8 +233,14 @@ def _save_workflow_data(thread_id: str, data: dict):
 # ============================================================================
 
 @router.post("/start", response_model=WorkflowStateResponse)
-async def start_workflow(request: StartWorkflowRequest):
+async def start_workflow(
+    request: StartWorkflowRequest,
+    x_forwarded_for: Optional[str] = Header(None),
+    x_real_ip: Optional[str] = Header(None),
+):
     """Start a new resume optimization workflow.
+
+    Rate limited by IP address to prevent abuse.
 
     Provide either:
     - linkedin_url: LinkedIn profile URL
@@ -216,6 +250,18 @@ async def start_workflow(request: StartWorkflowRequest):
     - job_url: URL to the job posting
     - job_text: Pasted job description (fallback if URL scraping fails)
     """
+    # Get client IP from headers (for proxied requests) or fall back to generic
+    client_ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else (x_real_ip or "unknown")
+
+    # Check rate limit (3 requests per IP per day)
+    allowed, remaining, reset_time = check_rate_limit(client_ip)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Try again after {reset_time}.",
+            headers={"Retry-After": str(reset_time), "X-RateLimit-Remaining": "0"}
+        )
+
     # Validate URLs (job_url is optional if job_text is provided)
     is_valid, errors = validate_urls(
         linkedin_url=request.linkedin_url,
@@ -241,6 +287,7 @@ async def start_workflow(request: StartWorkflowRequest):
         job_url=request.job_url,
         uploaded_resume_text=request.resume_text,
         uploaded_job_text=request.job_text,
+        user_preferences=request.user_preferences,
     )
 
     # Store workflow metadata
@@ -249,6 +296,10 @@ async def start_workflow(request: StartWorkflowRequest):
         "config": config,
         "created_at": datetime.now().isoformat(),
     })
+
+    # Create thread metadata in Postgres for cleanup tracking
+    metadata_service = get_metadata_service()
+    metadata_service.create_thread(thread_id, workflow_step="ingest")
 
     # Start workflow in background
     asyncio.create_task(_run_workflow(thread_id))
@@ -326,7 +377,8 @@ async def _run_workflow(thread_id: str):
             workflow_data["interrupt_value"] = getattr(e, 'value', None)
             _save_workflow_data(thread_id, workflow_data)
         else:
-            logger.error(f"Workflow {thread_id} error: {e}")
+            import traceback
+            logger.error(f"Workflow {thread_id} error: {e}\n{traceback.format_exc()}")
             workflow_data = _workflows.get(thread_id, {})
             if "state" in workflow_data:
                 workflow_data["state"]["errors"] = [
@@ -351,6 +403,11 @@ async def get_workflow_status(thread_id: str, include_data: bool = False):
     """
     workflow_data = _get_workflow_data(thread_id)
     state = workflow_data.get("state", {})
+
+    # Update last_accessed timestamp in thread metadata
+    metadata_service = get_metadata_service()
+    current_step = state.get("current_step", "unknown")
+    metadata_service.update_last_accessed(thread_id, workflow_step=current_step)
     is_interrupted = workflow_data.get("interrupted", False)
 
     # Determine status
@@ -416,6 +473,9 @@ async def get_workflow_status(thread_id: str, include_data: bool = False):
     if include_data:
         response.user_profile = state.get("user_profile")
         response.job_posting = state.get("job_posting")
+        # Raw markdown for display/editing
+        response.profile_markdown = state.get("profile_markdown")
+        response.job_markdown = state.get("job_markdown")
         response.research = state.get("research")
         response.gap_analysis = state.get("gap_analysis")
         response.resume_html = state.get("resume_html")
@@ -467,8 +527,9 @@ async def submit_answer(thread_id: str, answer: AnswerRequest):
 
     logger.info(f"Answer submitted for {thread_id}, resuming workflow")
 
-    # Resume workflow with the answer
-    asyncio.create_task(_resume_workflow(thread_id, answer.text))
+    # Resume workflow with the answer and wait for it to complete
+    # This ensures the response includes updated state after processing
+    await _resume_workflow(thread_id, answer.text)
 
     return await get_workflow_status(thread_id)
 
@@ -578,6 +639,51 @@ async def confirm_discovery(thread_id: str, request: DiscoveryConfirmRequest):
     asyncio.create_task(_resume_workflow(thread_id, "discovery_complete"))
 
     return await get_workflow_status(thread_id)
+
+
+class UpdateResearchDataRequest(BaseModel):
+    """Request to update user profile or job posting data."""
+    user_profile: Optional[dict] = None
+    job_posting: Optional[dict] = None
+
+
+@router.patch("/{thread_id}/research/data")
+async def update_research_data(thread_id: str, request: UpdateResearchDataRequest):
+    """Update user profile and/or job posting data.
+
+    Allows users to correct parsing errors in the research phase.
+    Only updates fields that are provided (partial update).
+    """
+    workflow_data = _get_workflow_data(thread_id)
+    state = workflow_data.get("state", {})
+
+    if request.user_profile is not None:
+        existing_profile = state.get("user_profile", {}) or {}
+        if isinstance(existing_profile, dict):
+            # Merge updates into existing profile
+            state["user_profile"] = {**existing_profile, **request.user_profile}
+        else:
+            state["user_profile"] = request.user_profile
+
+    if request.job_posting is not None:
+        existing_job = state.get("job_posting", {}) or {}
+        if isinstance(existing_job, dict):
+            # Merge updates into existing job
+            state["job_posting"] = {**existing_job, **request.job_posting}
+        else:
+            state["job_posting"] = request.job_posting
+
+    state["updated_at"] = datetime.now().isoformat()
+    workflow_data["state"] = state
+    _save_workflow_data(thread_id, workflow_data)
+
+    logger.info(f"Research data updated for {thread_id}")
+
+    return {
+        "success": True,
+        "user_profile": state.get("user_profile"),
+        "job_posting": state.get("job_posting"),
+    }
 
 
 @router.get("/{thread_id}/stream")
@@ -1353,7 +1459,7 @@ async def get_linkedin_suggestions(thread_id: str):
     return linkedin
 
 
-@router.post("/{thread_id}/export/download/{format}")
+@router.get("/{thread_id}/export/download/{format}")
 async def download_export(thread_id: str, format: str):
     """Download resume in specified format (pdf, txt, json, docx)."""
     workflow_data = _get_workflow_data(thread_id)
@@ -1472,12 +1578,28 @@ async def get_workflow_data_endpoint(thread_id: str):
 
 @router.delete("/{thread_id}")
 async def delete_workflow(thread_id: str):
-    """Delete a workflow and its data."""
-    if thread_id not in _workflows:
+    """Delete a workflow and its data from memory and Postgres.
+
+    This removes:
+    - Memory cache entry
+    - Thread metadata record
+    - LangGraph checkpoint data (checkpoints, checkpoint_writes, checkpoint_blobs)
+    """
+    # Check if workflow exists in memory or can be recovered from Postgres
+    try:
+        _get_workflow_data(thread_id)
+    except HTTPException:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    del _workflows[thread_id]
+    # Delete from memory cache (using pop for atomic check-and-delete)
+    _workflows.pop(thread_id, None)
 
+    # Delete from Postgres (thread metadata and checkpoint data)
+    metadata_service = get_metadata_service()
+    metadata_service.delete_checkpoint_data(thread_id)
+    metadata_service.delete_thread(thread_id)
+
+    logger.info(f"Deleted workflow {thread_id} from memory and Postgres")
     return {"success": True, "message": "Workflow deleted"}
 
 
@@ -1525,3 +1647,98 @@ async def list_workflows(limit: int = 10, offset: int = 0):
         "limit": limit,
         "offset": offset,
     }
+
+
+# ============================================================================
+# Cleanup Endpoint (for scheduled cron jobs)
+# ============================================================================
+
+class CleanupRequest(BaseModel):
+    """Request for cleanup endpoint."""
+    days_old: int = Field(default=30, ge=1, le=365, description="Delete threads not accessed in this many days")
+
+
+class CleanupResponse(BaseModel):
+    """Response from cleanup endpoint."""
+    deleted: int
+    errors: int
+    thread_ids: list[str]
+    message: str
+
+
+@router.post("/cleanup", response_model=CleanupResponse)
+async def cleanup_old_workflows(
+    request: CleanupRequest = CleanupRequest(),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Clean up old workflows that haven't been accessed recently.
+
+    This endpoint is designed to be called by a scheduled cron job.
+    It requires authentication via X-API-Key header when CLEANUP_API_KEY is set.
+
+    Deletes:
+    - Thread metadata records
+    - LangGraph checkpoint data
+    - Memory cache entries
+
+    Args:
+        days_old: Delete threads not accessed in this many days (default: 30)
+        x_api_key: API key for authentication (from header)
+    """
+    # Check API key authentication
+    cleanup_api_key = os.getenv("CLEANUP_API_KEY")
+    if not cleanup_api_key:
+        # Log warning when cleanup endpoint is unprotected
+        logger.warning(
+            "CLEANUP_API_KEY not set - cleanup endpoint is unprotected. "
+            "Set CLEANUP_API_KEY environment variable to secure this endpoint."
+        )
+    elif x_api_key != cleanup_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API key. Set X-API-Key header."
+        )
+
+    metadata_service = get_metadata_service()
+
+    # Check if database is configured
+    if not metadata_service.database_url:
+        # Memory-only cleanup
+        old_threads = []
+        cutoff = datetime.now() - timedelta(days=request.days_old)
+
+        for thread_id, data in list(_workflows.items()):
+            created_at = _parse_timestamp(data.get("created_at", ""))
+            if created_at and created_at < cutoff:
+                del _workflows[thread_id]
+                old_threads.append(thread_id)
+
+        return CleanupResponse(
+            deleted=len(old_threads),
+            errors=0,
+            thread_ids=old_threads,
+            message="Memory-only cleanup (no database configured)"
+        )
+
+    # First, get the list of threads to clean up
+    expired_threads = metadata_service.get_expired_threads(days_old=request.days_old)
+
+    # Remove from memory cache FIRST to prevent race condition
+    # where another request tries to access a thread being deleted
+    for thread_id in expired_threads:
+        _workflows.pop(thread_id, None)
+
+    # Now perform the database cleanup
+    result = metadata_service.cleanup_expired_threads(days_old=request.days_old)
+
+    logger.info(
+        f"Cleanup completed: deleted {result['deleted']} threads, "
+        f"{result['errors']} errors"
+    )
+
+    return CleanupResponse(
+        deleted=result["deleted"],
+        errors=result["errors"],
+        thread_ids=result["thread_ids"],
+        message=f"Cleaned up threads not accessed in {request.days_old} days"
+    )

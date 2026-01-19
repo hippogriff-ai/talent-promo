@@ -14,6 +14,7 @@ from workflow.nodes.drafting import (
     increment_version,
     create_version,
     ACTION_VERBS,
+    _format_user_preferences,
 )
 
 
@@ -479,3 +480,92 @@ class TestChangeLog:
 
         assert entry.change_type == "edit"
         assert entry.suggestion_id is None
+
+
+class TestUserPreferencesFormatting:
+    """Test user preferences formatting for drafting context."""
+
+    def test_format_no_preferences(self):
+        """Test formatting when no preferences provided."""
+        result = _format_user_preferences(None)
+        assert "None specified" in result
+
+    def test_format_empty_preferences(self):
+        """Test formatting when preferences dict is empty."""
+        result = _format_user_preferences({})
+        assert "None specified" in result
+
+    def test_format_tone_formal(self):
+        """Test formatting formal tone preference."""
+        prefs = {"tone": "formal"}
+        result = _format_user_preferences(prefs)
+        assert "professional" in result.lower()
+        assert "structured" in result.lower()
+
+    def test_format_tone_conversational(self):
+        """Test formatting conversational tone preference."""
+        prefs = {"tone": "conversational"}
+        result = _format_user_preferences(prefs)
+        assert "friendly" in result.lower()
+
+    def test_format_structure_bullets(self):
+        """Test formatting bullet structure preference."""
+        prefs = {"structure": "bullets"}
+        result = _format_user_preferences(prefs)
+        assert "bullet" in result.lower()
+
+    def test_format_structure_paragraphs(self):
+        """Test formatting paragraph structure preference."""
+        prefs = {"structure": "paragraphs"}
+        result = _format_user_preferences(prefs)
+        assert "paragraph" in result.lower()
+
+    def test_format_first_person_true(self):
+        """Test formatting first person preference when true."""
+        prefs = {"first_person": True}
+        result = _format_user_preferences(prefs)
+        assert "'I'" in result
+
+    def test_format_first_person_false(self):
+        """Test formatting first person preference when false."""
+        prefs = {"first_person": False}
+        result = _format_user_preferences(prefs)
+        assert "implied" in result.lower()
+
+    def test_format_quantification_heavy_metrics(self):
+        """Test formatting heavy metrics quantification preference."""
+        prefs = {"quantification_preference": "heavy_metrics"}
+        result = _format_user_preferences(prefs)
+        assert "numbers" in result.lower() or "metrics" in result.lower()
+
+    def test_format_quantification_qualitative(self):
+        """Test formatting qualitative quantification preference."""
+        prefs = {"quantification_preference": "qualitative"}
+        result = _format_user_preferences(prefs)
+        assert "descriptive" in result.lower() or "impact" in result.lower()
+
+    def test_format_achievement_focus_true(self):
+        """Test formatting achievement focus preference when true."""
+        prefs = {"achievement_focus": True}
+        result = _format_user_preferences(prefs)
+        assert "accomplishment" in result.lower() or "result" in result.lower()
+
+    def test_format_all_preferences(self):
+        """Test formatting with all preferences set."""
+        prefs = {
+            "tone": "confident",
+            "structure": "mixed",
+            "sentence_length": "concise",
+            "first_person": True,
+            "quantification_preference": "balanced",
+            "achievement_focus": True,
+        }
+        result = _format_user_preferences(prefs)
+
+        # Should include all preference types
+        assert "Tone:" in result
+        assert "Structure:" in result
+        assert "Sentence style:" in result
+        assert "Voice:" in result
+        assert "Quantification:" in result
+        assert "Focus:" in result

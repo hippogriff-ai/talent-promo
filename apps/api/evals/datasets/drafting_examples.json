@@ -1,0 +1,101 @@
+[
+  {
+    "id": "formal_tone_swe",
+    "description": "Software engineer with formal tone preference",
+    "input": {
+      "profile": {
+        "name": "Alex Chen",
+        "headline": "Senior Software Engineer",
+        "summary": "Experienced engineer with 5 years in full-stack development",
+        "experience": [
+          {
+            "company": "TechCorp",
+            "position": "Senior Software Engineer",
+            "duration": "2020-2024",
+            "description": "Led development of microservices architecture"
+          }
+        ],
+        "skills": ["Python", "TypeScript", "AWS", "Docker"]
+      },
+      "job_posting": {
+        "title": "Staff Engineer",
+        "company_name": "BigTech Inc",
+        "requirements": ["8+ years experience", "System design", "Leadership"],
+        "tech_stack": ["Python", "Kubernetes", "AWS"]
+      },
+      "preferences": {
+        "tone": "formal",
+        "structure": "bullets",
+        "first_person": false,
+        "quantification_preference": "heavy_metrics"
+      }
+    },
+    "expected_keywords": ["Python", "AWS", "microservices", "leadership"]
+  },
+  {
+    "id": "conversational_pm",
+    "description": "Product manager with conversational tone",
+    "input": {
+      "profile": {
+        "name": "Jordan Lee",
+        "headline": "Product Manager",
+        "summary": "Product manager passionate about user experience",
+        "experience": [
+          {
+            "company": "StartupXYZ",
+            "position": "Product Manager",
+            "duration": "2019-2024",
+            "description": "Owned product roadmap for B2B SaaS platform"
+          }
+        ],
+        "skills": ["Product Strategy", "Agile", "User Research"]
+      },
+      "job_posting": {
+        "title": "Senior Product Manager",
+        "company_name": "ProductCo",
+        "requirements": ["5+ years PM experience", "B2B SaaS", "Data-driven"],
+        "tech_stack": []
+      },
+      "preferences": {
+        "tone": "conversational",
+        "structure": "paragraphs",
+        "first_person": true,
+        "quantification_preference": "balanced"
+      }
+    },
+    "expected_keywords": ["product", "roadmap", "SaaS", "user research"]
+  },
+  {
+    "id": "metrics_heavy_analyst",
+    "description": "Data analyst emphasizing metrics",
+    "input": {
+      "profile": {
+        "name": "Sam Rivera",
+        "headline": "Senior Data Analyst",
+        "summary": "Data analyst with expertise in business intelligence",
+        "experience": [
+          {
+            "company": "DataCorp",
+            "position": "Senior Data Analyst",
+            "duration": "2018-2024",
+            "description": "Built dashboards used by 200+ stakeholders"
+          }
+        ],
+        "skills": ["SQL", "Python", "Tableau", "Statistical Analysis"]
+      },
+      "job_posting": {
+        "title": "Lead Data Analyst",
+        "company_name": "AnalyticsFirm",
+        "requirements": ["SQL expertise", "Business acumen", "Visualization"],
+        "tech_stack": ["SQL", "Python", "Tableau"]
+      },
+      "preferences": {
+        "tone": "formal",
+        "structure": "bullets",
+        "first_person": false,
+        "quantification_preference": "heavy_metrics"
+      }
+    },
+    "expected_keywords": ["SQL", "Python", "Tableau", "analytics", "dashboard"]
+  }
+]

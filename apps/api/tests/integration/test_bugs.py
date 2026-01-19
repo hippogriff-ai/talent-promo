@@ -413,7 +413,7 @@ class TestBug012_EmptyJobUrlValidation:
 
         # BUG: Empty job_url might pass through
         assert response.status_code == 400
-        assert "Job URL is required" in response.json()["detail"]
+        assert "Either job URL or pasted job description is required" in response.json()["detail"]
 
 
 class TestBug013_SpecialCharsInFilename:
@@ -442,7 +442,7 @@ class TestBug013_SpecialCharsInFilename:
         }
         _workflows[thread_id]["state"]["resume_html"] = "<h1>Test</h1>"
 
-        response = client.post(f"/api/optimize/{thread_id}/export/download/txt")
+        response = client.get(f"/api/optimize/{thread_id}/export/download/txt")
 
         # Should handle special chars gracefully
         assert response.status_code == 200
@@ -964,7 +964,7 @@ class TestBug028_MissingUserProfileInExport:
         _workflows[thread_id]["state"]["user_profile"] = None
         _workflows[thread_id]["state"]["resume_html"] = "<h1>Test Resume</h1><p>Content</p>"
 
-        response = client.post(f"/api/optimize/{thread_id}/export/download/txt")
+        response = client.get(f"/api/optimize/{thread_id}/export/download/txt")
 
         # Should use fallback filename instead of crashing
         assert response.status_code == 200

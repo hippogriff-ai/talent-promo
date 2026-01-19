@@ -74,6 +74,6 @@ def get_settings() -> Settings:
     else:
         logger.warning("No .env file found, using environment variables only")
 
-    logger.info(f"Settings loaded: model={settings.openai_model}")
+    logger.info(f"Settings loaded: model={settings.anthropic_model}")
 
     return settings

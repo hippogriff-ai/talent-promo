@@ -163,13 +163,26 @@ Be precise and don't make up information that isn't clearly stated in the postin
 For tech_stack, extract all mentioned programming languages, frameworks, tools, and platforms."""
 
 
+def _is_profile_data_complete(data: dict) -> bool:
+    """Check if profile data has required fields for resume optimization."""
+    if not data:
+        return False
+    # Must have name and at least some experience or skills
+    has_name = bool(data.get("name"))
+    has_experience = bool(data.get("experience")) and len(data.get("experience", [])) > 0
+    has_skills = bool(data.get("skills")) and len(data.get("skills", [])) > 0
+    return has_name and (has_experience or has_skills)
+
+
 async def fetch_profile_node(state: ResumeState) -> dict[str, Any]:
     """Fetch and parse user profile from LinkedIn URL or use uploaded resume.
 
     This node handles two cases:
-    1. LinkedIn URL provided -> Fetch via EXA and parse
-    2. Resume text uploaded -> Parse directly
+    1. LinkedIn URL provided -> Try EXA structured extraction first, fallback to LLM
+    2. Resume text uploaded -> Parse directly with LLM
     """
+    from tools.exa_tool import exa_get_structured_content
+
     logger.info("Starting profile fetch node")
 
     linkedin_url = state.get("linkedin_url")
@@ -177,60 +190,84 @@ async def fetch_profile_node(state: ResumeState) -> dict[str, Any]:
 
     try:
         if linkedin_url:
-            # Fetch LinkedIn profile via EXA with retry logic
-            logger.info(f"Fetching LinkedIn profile: {linkedin_url}")
+            # First try EXA structured extraction (faster, no LLM call)
+            logger.info(f"Trying EXA structured extraction for: {linkedin_url}")
 
-            result = await fetch_with_retry(
-                exa_get_contents.invoke,
-                {
-                    "urls": [linkedin_url],
-                    "include_text": True,
-                    "include_highlights": True,
-                    "include_summary": True,
-                },
-                max_retries=MAX_RETRIES,
+            structured_result = exa_get_structured_content(
+                url=linkedin_url,
+                content_type="linkedin_profile",
             )
 
-            if not result.get("success") or not result.get("contents"):
-                error_msg = result.get("error", "Unknown error")
-                # Provide manual input fallback option
-                fallback_msg = f"Failed to fetch LinkedIn profile after {MAX_RETRIES} retries: {error_msg}. You can try again or paste your resume text instead."
-                return {
-                    "errors": [*state.get("errors", []), fallback_msg],
-                    "current_step": "error",
-                }
+            profile_data = None
+            raw_text = structured_result.get("raw_text", "")
 
-            raw_text = result["contents"][0].get("text", "")
-
-            # Parse with LLM
-            llm = get_llm()
-            messages = [
-                SystemMessage(content=PROFILE_EXTRACTION_PROMPT),
-                HumanMessage(content=f"Extract profile information from:\n\n{raw_text}"),
-            ]
-
-            response = await llm.ainvoke(messages)
-
-            # Parse JSON from response
-            import json
-            try:
-                # Try to extract JSON from the response
-                content = response.content
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
-
-                profile_data = json.loads(content)
+            # Check if structured extraction succeeded with complete data
+            if (
+                structured_result.get("success")
+                and structured_result.get("structured_data")
+                and _is_profile_data_complete(structured_result["structured_data"])
+            ):
+                logger.info("EXA structured extraction successful, using structured data")
+                profile_data = structured_result["structured_data"]
                 profile_data["linkedin_url"] = linkedin_url
                 profile_data["raw_text"] = raw_text
+                profile_data["extraction_method"] = "exa_structured"
+            else:
+                # Fallback to LLM parsing
+                logger.info("EXA structured extraction incomplete, falling back to LLM parsing")
 
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse profile JSON: {e}")
-                return {
-                    "errors": [*state.get("errors", []), f"Failed to parse profile data: {str(e)}"],
-                    "current_step": "error",
-                }
+                # If EXA failed completely, fetch raw content
+                if not raw_text:
+                    result = await fetch_with_retry(
+                        exa_get_contents.invoke,
+                        {
+                            "urls": [linkedin_url],
+                            "include_text": True,
+                            "include_highlights": True,
+                            "include_summary": True,
+                        },
+                        max_retries=MAX_RETRIES,
+                    )
+
+                    if not result.get("success") or not result.get("contents"):
+                        error_msg = result.get("error", "Unknown error")
+                        fallback_msg = f"Failed to fetch LinkedIn profile after {MAX_RETRIES} retries: {error_msg}. You can try again or paste your resume text instead."
+                        return {
+                            "errors": [*state.get("errors", []), fallback_msg],
+                            "current_step": "error",
+                        }
+
+                    raw_text = result["contents"][0].get("text", "")
+
+                # Parse with LLM
+                llm = get_llm()
+                messages = [
+                    SystemMessage(content=PROFILE_EXTRACTION_PROMPT),
+                    HumanMessage(content=f"Extract profile information from:\n\n{raw_text}"),
+                ]
+
+                response = await llm.ainvoke(messages)
+
+                # Parse JSON from response
+                import json
+                try:
+                    content = response.content
+                    if "```json" in content:
+                        content = content.split("```json")[1].split("```")[0]
+                    elif "```" in content:
+                        content = content.split("```")[1].split("```")[0]
+
+                    profile_data = json.loads(content)
+                    profile_data["linkedin_url"] = linkedin_url
+                    profile_data["raw_text"] = raw_text
+                    profile_data["extraction_method"] = "llm_parsing"
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse profile JSON: {e}")
+                    return {
+                        "errors": [*state.get("errors", []), f"Failed to parse profile data: {str(e)}"],
+                        "current_step": "error",
+                    }
 
         elif uploaded_resume:
             # Parse uploaded resume text
@@ -283,8 +320,25 @@ async def fetch_profile_node(state: ResumeState) -> dict[str, Any]:
         }
 
 
+def _is_job_data_complete(data: dict) -> bool:
+    """Check if job data has required fields for resume optimization."""
+    if not data:
+        return False
+    # Must have title and company, plus some requirements
+    has_title = bool(data.get("title"))
+    has_company = bool(data.get("company_name"))
+    has_requirements = bool(data.get("requirements")) and len(data.get("requirements", [])) > 0
+    return has_title and has_company and has_requirements
+
+
 async def fetch_job_node(state: ResumeState) -> dict[str, Any]:
-    """Fetch and parse job posting from URL."""
+    """Fetch and parse job posting from URL.
+
+    Uses EXA structured extraction first for speed, with LLM fallback
+    for incomplete data.
+    """
+    from tools.exa_tool import exa_get_structured_content
+
     logger.info("Starting job fetch node")
 
     job_url = state.get("job_url")
@@ -296,58 +350,83 @@ async def fetch_job_node(state: ResumeState) -> dict[str, Any]:
         }
 
     try:
-        # Fetch job posting via EXA with retry logic
-        logger.info(f"Fetching job posting: {job_url}")
+        # First try EXA structured extraction (faster, no LLM call)
+        logger.info(f"Trying EXA structured extraction for job: {job_url}")
 
-        result = await fetch_with_retry(
-            exa_get_contents.invoke,
-            {
-                "urls": [job_url],
-                "include_text": True,
-                "include_highlights": True,
-                "include_summary": True,
-            },
-            max_retries=MAX_RETRIES,
+        structured_result = exa_get_structured_content(
+            url=job_url,
+            content_type="job_posting",
         )
 
-        if not result.get("success") or not result.get("contents"):
-            error_msg = result.get("error", "Unknown error")
-            return {
-                "errors": [*state.get("errors", []), f"Failed to fetch job posting after {MAX_RETRIES} retries: {error_msg}"],
-                "current_step": "error",
-            }
+        job_data = None
+        raw_text = structured_result.get("raw_text", "")
 
-        raw_text = result["contents"][0].get("text", "")
-
-        # Parse with LLM
-        llm = get_llm()
-        messages = [
-            SystemMessage(content=JOB_EXTRACTION_PROMPT),
-            HumanMessage(content=f"Extract job posting information from:\n\n{raw_text}"),
-        ]
-
-        response = await llm.ainvoke(messages)
-
-        # Parse JSON from response
-        import json
-        try:
-            content = response.content
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
-
-            job_data = json.loads(content)
+        # Check if structured extraction succeeded with complete data
+        if (
+            structured_result.get("success")
+            and structured_result.get("structured_data")
+            and _is_job_data_complete(structured_result["structured_data"])
+        ):
+            logger.info("EXA structured extraction successful, using structured data")
+            job_data = structured_result["structured_data"]
             job_data["source_url"] = job_url
+            job_data["extraction_method"] = "exa_structured"
+        else:
+            # Fallback to LLM parsing
+            logger.info("EXA structured extraction incomplete, falling back to LLM parsing")
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse job JSON: {e}")
-            return {
-                "errors": [*state.get("errors", []), f"Failed to parse job data: {str(e)}"],
-                "current_step": "error",
-            }
+            # If EXA failed completely, fetch raw content
+            if not raw_text:
+                result = await fetch_with_retry(
+                    exa_get_contents.invoke,
+                    {
+                        "urls": [job_url],
+                        "include_text": True,
+                        "include_highlights": True,
+                        "include_summary": True,
+                    },
+                    max_retries=MAX_RETRIES,
+                )
 
-        logger.info(f"Successfully parsed job: {job_data.get('title', 'Unknown')} at {job_data.get('company_name', 'Unknown')}")
+                if not result.get("success") or not result.get("contents"):
+                    error_msg = result.get("error", "Unknown error")
+                    return {
+                        "errors": [*state.get("errors", []), f"Failed to fetch job posting after {MAX_RETRIES} retries: {error_msg}"],
+                        "current_step": "error",
+                    }
+
+                raw_text = result["contents"][0].get("text", "")
+
+            # Parse with LLM
+            llm = get_llm()
+            messages = [
+                SystemMessage(content=JOB_EXTRACTION_PROMPT),
+                HumanMessage(content=f"Extract job posting information from:\n\n{raw_text}"),
+            ]
+
+            response = await llm.ainvoke(messages)
+
+            # Parse JSON from response
+            import json
+            try:
+                content = response.content
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+
+                job_data = json.loads(content)
+                job_data["source_url"] = job_url
+                job_data["extraction_method"] = "llm_parsing"
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse job JSON: {e}")
+                return {
+                    "errors": [*state.get("errors", []), f"Failed to parse job data: {str(e)}"],
+                    "current_step": "error",
+                }
+
+        logger.info(f"Successfully parsed job: {job_data.get('title', 'Unknown')} at {job_data.get('company_name', 'Unknown')} (method: {job_data.get('extraction_method', 'unknown')})")
 
         return {
             "job_posting": job_data,
@@ -367,11 +446,13 @@ async def parallel_ingest_node(state: ResumeState) -> dict[str, Any]:
     """Fetch and parse profile + job posting with maximum parallelism.
 
     Optimized flow:
-    1. Fetch both URLs in parallel via EXA
-    2. Parse both with LLM in parallel
+    1. Try EXA structured extraction first (no LLM needed)
+    2. Fall back to LLM parsing only if structured extraction fails/incomplete
 
-    This reduces ingest time from ~50s to ~25s.
+    This can skip LLM entirely when EXA returns complete structured data.
     """
+    from tools.exa_tool import exa_get_structured_content
+
     logger.info("Starting optimized parallel ingest")
 
     linkedin_url = state.get("linkedin_url")
@@ -383,118 +464,172 @@ async def parallel_ingest_node(state: ResumeState) -> dict[str, Any]:
     progress = list(state.get("progress_messages", []))
 
     try:
-        # Phase 1: Fetch both URLs in parallel (or use uploaded text)
-        logger.info("Phase 1: Parallel URL fetching")
+        # Phase 1: Try EXA structured extraction first (faster, no LLM)
+        logger.info("Phase 1: Trying EXA structured extraction")
         profile_source = "Using uploaded resume" if uploaded_resume else f"LinkedIn: {linkedin_url[:50]}..." if linkedin_url else "No profile source"
         job_source = "Using pasted job description" if uploaded_job_text else f"Job URL: {job_url[:50]}..." if job_url else "No job source"
         progress = _add_progress(progress, "ingest", "Fetching your profile and job posting...",
                                 f"{profile_source} | {job_source}")
 
-        async def fetch_profile_content():
-            if uploaded_resume:
-                return {"success": True, "text": uploaded_resume, "source": "upload"}
-            if not linkedin_url:
-                return {"success": False, "error": "No LinkedIn URL or resume provided"}
+        profile_data = None
+        job_data = None
+        profile_raw_text = None
+        job_raw_text = None
+        need_llm_profile = False
+        need_llm_job = False
 
-            result = await fetch_with_retry(
-                exa_get_contents.invoke,
-                {"urls": [linkedin_url], "include_text": True, "include_highlights": True, "include_summary": True},
-                max_retries=MAX_RETRIES,
+        # Try structured extraction for profile
+        if uploaded_resume:
+            # Uploaded text needs LLM parsing
+            profile_raw_text = uploaded_resume
+            need_llm_profile = True
+        elif linkedin_url:
+            # Try EXA structured extraction first
+            structured_result = exa_get_structured_content(
+                url=linkedin_url,
+                content_type="linkedin_profile",
             )
-            if result.get("success") and result.get("contents"):
-                text = result["contents"][0].get("text", "")
-                if text:
-                    return {"success": True, "text": text, "source": "linkedin"}
-                return {"success": False, "error": f"LinkedIn page returned empty content. The profile may be private or the page requires login. URL: {linkedin_url}"}
-            if result.get("error"):
-                return {"success": False, "error": f"EXA error: {result.get('error')}"}
-            return {"success": False, "error": f"Could not extract content from LinkedIn profile. The profile may be private or blocked. URL: {linkedin_url}"}
+            profile_raw_text = structured_result.get("raw_text", "")
 
-        async def fetch_job_content():
-            # Check for pasted job description first
-            if uploaded_job_text:
-                return {"success": True, "text": uploaded_job_text, "source": "paste"}
-            if not job_url:
-                return {"success": False, "error": "No job URL or job description provided"}
-
-            result = await fetch_with_retry(
-                exa_get_contents.invoke,
-                {"urls": [job_url], "include_text": True, "include_highlights": True, "include_summary": True},
-                max_retries=MAX_RETRIES,
-            )
-            if result.get("success") and result.get("contents"):
-                text = result["contents"][0].get("text", "")
-                if text:
-                    return {"success": True, "text": text, "source": "url"}
-                return {"success": False, "error": f"Job page returned empty content. The page may require JavaScript or be protected. Try pasting the job description instead. URL: {job_url}"}
-            if result.get("error"):
-                return {"success": False, "error": f"EXA error: {result.get('error')}. Try pasting the job description instead."}
-            return {"success": False, "error": f"Could not extract content from job page. The site may block scrapers or require login. Try pasting the job description instead. URL: {job_url}"}
-
-        fetch_results = await asyncio.gather(
-            fetch_profile_content(),
-            fetch_job_content(),
-            return_exceptions=True
-        )
-
-        profile_content = fetch_results[0] if not isinstance(fetch_results[0], Exception) else {"success": False, "error": str(fetch_results[0])}
-        job_content = fetch_results[1] if not isinstance(fetch_results[1], Exception) else {"success": False, "error": str(fetch_results[1])}
-
-        if not profile_content.get("success"):
-            errors.append(f"Profile fetch failed: {profile_content.get('error')}")
-        if not job_content.get("success"):
-            errors.append(f"Job fetch failed: {job_content.get('error')}")
-
-        if not profile_content.get("success") or not job_content.get("success"):
+            if (
+                structured_result.get("success")
+                and structured_result.get("structured_data")
+                and _is_profile_data_complete(structured_result["structured_data"])
+            ):
+                logger.info("EXA structured extraction SUCCESS for profile - skipping LLM")
+                profile_data = structured_result["structured_data"]
+                profile_data["linkedin_url"] = linkedin_url
+                profile_data["extraction_method"] = "exa_structured"
+            else:
+                logger.info("EXA structured extraction incomplete for profile - will use LLM")
+                need_llm_profile = True
+                # If no raw text from structured extraction, fetch it
+                if not profile_raw_text:
+                    result = await fetch_with_retry(
+                        exa_get_contents.invoke,
+                        {"urls": [linkedin_url], "include_text": True, "include_highlights": True, "include_summary": True, "livecrawl": "always"},
+                        max_retries=MAX_RETRIES,
+                    )
+                    if result.get("success") and result.get("contents"):
+                        profile_raw_text = result["contents"][0].get("text", "")
+                    if not profile_raw_text:
+                        errors.append(f"Failed to fetch LinkedIn profile content. The profile may be private. URL: {linkedin_url}")
+                        return {"errors": errors, "current_step": "error", "progress_messages": progress}
+        else:
+            errors.append("No LinkedIn URL or resume provided")
             return {"errors": errors, "current_step": "error", "progress_messages": progress}
 
-        progress = _add_progress(progress, "ingest", "URLs fetched successfully", "Extracting structured data...")
+        # Try structured extraction for job
+        if uploaded_job_text:
+            # Pasted text needs LLM parsing
+            job_raw_text = uploaded_job_text
+            need_llm_job = True
+        elif job_url:
+            # Try EXA structured extraction first
+            structured_result = exa_get_structured_content(
+                url=job_url,
+                content_type="job_posting",
+            )
+            job_raw_text = structured_result.get("raw_text", "")
 
-        # Phase 2: Parse both with LLM in parallel
-        logger.info("Phase 2: Parallel LLM parsing")
-        progress = _add_progress(progress, "ingest", "Parsing profile with AI...", "Extracting skills, experience, education")
+            if (
+                structured_result.get("success")
+                and structured_result.get("structured_data")
+                and _is_job_data_complete(structured_result["structured_data"])
+            ):
+                logger.info("EXA structured extraction SUCCESS for job - skipping LLM")
+                job_data = structured_result["structured_data"]
+                job_data["source_url"] = job_url
+                job_data["extraction_method"] = "exa_structured"
+            else:
+                logger.info("EXA structured extraction incomplete for job - will use LLM")
+                need_llm_job = True
+                # If no raw text from structured extraction, fetch it
+                if not job_raw_text:
+                    result = await fetch_with_retry(
+                        exa_get_contents.invoke,
+                        {"urls": [job_url], "include_text": True, "include_highlights": True, "include_summary": True, "livecrawl": "fallback"},
+                        max_retries=MAX_RETRIES,
+                    )
+                    if result.get("success") and result.get("contents"):
+                        job_raw_text = result["contents"][0].get("text", "")
+                    if not job_raw_text:
+                        errors.append(f"Failed to fetch job posting content. Try pasting the job description instead. URL: {job_url}")
+                        return {"errors": errors, "current_step": "error", "progress_messages": progress}
+        else:
+            errors.append("No job URL or job description provided")
+            return {"errors": errors, "current_step": "error", "progress_messages": progress}
 
-        llm = get_llm()
+        # Phase 2: LLM parsing only for items that need it
+        if need_llm_profile or need_llm_job:
+            logger.info(f"Phase 2: LLM parsing (profile={need_llm_profile}, job={need_llm_job})")
+            progress = _add_progress(progress, "ingest", "Parsing with AI...",
+                                    "Extracting structured data" if need_llm_profile and need_llm_job else "Completing extraction")
 
-        async def parse_profile():
-            messages = [
-                SystemMessage(content=PROFILE_EXTRACTION_PROMPT),
-                HumanMessage(content=f"Extract profile information from:\n\n{profile_content['text']}"),
-            ]
-            response = await llm.ainvoke(messages)
-            return _parse_json_response(response.content)
+            llm = get_llm()
+            parse_tasks = []
 
-        async def parse_job():
-            messages = [
-                SystemMessage(content=JOB_EXTRACTION_PROMPT),
-                HumanMessage(content=f"Extract job posting information from:\n\n{job_content['text']}"),
-            ]
-            response = await llm.ainvoke(messages)
-            return _parse_json_response(response.content)
+            async def parse_profile_llm():
+                messages = [
+                    SystemMessage(content=PROFILE_EXTRACTION_PROMPT),
+                    HumanMessage(content=f"Extract profile information from:\n\n{profile_raw_text}"),
+                ]
+                response = await llm.ainvoke(messages)
+                data = _parse_json_response(response.content)
+                data["extraction_method"] = "llm_parsing"
+                return data
 
-        parse_results = await asyncio.gather(
-            parse_profile(),
-            parse_job(),
-            return_exceptions=True
-        )
+            async def parse_job_llm():
+                messages = [
+                    SystemMessage(content=JOB_EXTRACTION_PROMPT),
+                    HumanMessage(content=f"Extract job posting information from:\n\n{job_raw_text}"),
+                ]
+                response = await llm.ainvoke(messages)
+                data = _parse_json_response(response.content)
+                data["extraction_method"] = "llm_parsing"
+                return data
 
-        profile_data = parse_results[0] if not isinstance(parse_results[0], Exception) else None
-        job_data = parse_results[1] if not isinstance(parse_results[1], Exception) else None
+            if need_llm_profile:
+                parse_tasks.append(("profile", parse_profile_llm()))
+            if need_llm_job:
+                parse_tasks.append(("job", parse_job_llm()))
 
-        if isinstance(parse_results[0], Exception):
-            errors.append(f"Profile parse error: {str(parse_results[0])}")
-        if isinstance(parse_results[1], Exception):
-            errors.append(f"Job parse error: {str(parse_results[1])}")
+            # Run needed LLM tasks in parallel
+            if parse_tasks:
+                task_results = await asyncio.gather(
+                    *[task for _, task in parse_tasks],
+                    return_exceptions=True
+                )
+
+                for i, (task_type, _) in enumerate(parse_tasks):
+                    result = task_results[i]
+                    if isinstance(result, Exception):
+                        errors.append(f"{task_type.title()} parse error: {str(result)}")
+                    elif task_type == "profile":
+                        profile_data = result
+                    elif task_type == "job":
+                        job_data = result
+        else:
+            progress = _add_progress(progress, "ingest", "Structured extraction complete",
+                                    "Both profile and job extracted without AI parsing")
 
         if not profile_data or not job_data:
             return {"errors": errors, "current_step": "error", "progress_messages": progress}
 
         # Add source URLs and raw text
-        if linkedin_url:
+        if linkedin_url and "linkedin_url" not in profile_data:
             profile_data["linkedin_url"] = linkedin_url
-        profile_data["raw_text"] = profile_content["text"]
-        job_data["source_url"] = job_url if job_url else "pasted_job_description"
-        job_data["raw_text"] = job_content["text"]
+        profile_data["raw_text"] = profile_raw_text
+        if job_url and "source_url" not in job_data:
+            job_data["source_url"] = job_url
+        elif not job_url:
+            job_data["source_url"] = "pasted_job_description"
+        job_data["raw_text"] = job_raw_text
+
+        # Log extraction methods used
+        profile_method = profile_data.get("extraction_method", "unknown")
+        job_method = job_data.get("extraction_method", "unknown")
+        logger.info(f"Extraction methods: profile={profile_method}, job={job_method}")
 
         # Add completion progress
         progress = _add_progress(progress, "ingest", "Profile and job parsed successfully",
@@ -505,6 +640,9 @@ async def parallel_ingest_node(state: ResumeState) -> dict[str, Any]:
         return {
             "user_profile": profile_data,
             "job_posting": job_data,
+            # Store raw markdown for display and user editing
+            "profile_markdown": profile_raw_text,
+            "job_markdown": job_raw_text,
             "current_step": "research",
             "sub_step": "ingest_complete",
             "progress_messages": progress,

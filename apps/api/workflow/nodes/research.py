@@ -111,9 +111,9 @@ async def research_node(state: ResumeState) -> dict[str, Any]:
             "progress_messages": progress,
         }
 
-    company_name = job_posting.get("company_name", "")
-    job_title = job_posting.get("title", "")
-    tech_stack = job_posting.get("tech_stack", [])
+    company_name = job_posting.get("company_name") or ""
+    job_title = job_posting.get("title") or ""
+    tech_stack = job_posting.get("tech_stack") or []
 
     try:
         # Build search queries
@@ -205,11 +205,11 @@ async def research_node(state: ResumeState) -> dict[str, Any]:
                                 "Synthesizing research + identifying gaps and opportunities")
         llm = get_llm()
 
-        # Extract job posting details
-        job_requirements = job_posting.get("requirements", [])
-        job_preferred = job_posting.get("preferred_qualifications", [])
-        job_responsibilities = job_posting.get("responsibilities", [])
-        job_description = job_posting.get("description", "")
+        # Extract job posting details (use 'or' to handle None values)
+        job_requirements = job_posting.get("requirements") or []
+        job_preferred = job_posting.get("preferred_qualifications") or []
+        job_responsibilities = job_posting.get("responsibilities") or []
+        job_description = job_posting.get("description") or ""
 
         # Build combined context
         synthesis_context = f"""
@@ -221,7 +221,7 @@ Summary: {user_profile.get('summary', 'N/A') if user_profile else 'N/A'}
 Experience:
 {_format_experience(user_profile.get('experience', []) if user_profile else [])}
 
-Skills: {', '.join(user_profile.get('skills', []) if user_profile else [])}
+Skills: {', '.join((user_profile.get('skills') or []) if user_profile else [])}
 
 ---
 

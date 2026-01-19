@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useWorkflow } from "../hooks/useWorkflow";
 import { useWorkflowSession, WorkflowStage } from "../hooks/useWorkflowSession";
+import { usePreferences } from "../hooks/usePreferences";
+import { useExportStorage } from "../hooks/useExportStorage";
 import WorkflowStepper from "../components/optimize/WorkflowStepper";
 import SessionRecoveryModal from "../components/optimize/SessionRecoveryModal";
 import StartNewSessionDialog from "../components/optimize/StartNewSessionDialog";
@@ -45,6 +47,8 @@ export default function OptimizePage() {
   const router = useRouter();
   const workflow = useWorkflow();
   const workflowSession = useWorkflowSession();
+  const { preferences } = usePreferences();
+  const exportStorage = useExportStorage();
 
   const [inputData, setInputData] = useState<{
     linkedinUrl?: string;
@@ -89,7 +93,8 @@ export default function OptimizePage() {
               data.linkedinUrl,
               data.jobUrl,
               data.resumeText,
-              data.jobText
+              data.jobText,
+              preferences
             );
             workflowSession.startSession(
               data.linkedinUrl || "",
@@ -186,7 +191,8 @@ export default function OptimizePage() {
         inputData.linkedinUrl,
         inputData.jobUrl,
         inputData.resumeText,
-        inputData.jobText
+        inputData.jobText,
+        preferences
       );
 
       // Initialize session
@@ -208,22 +214,22 @@ export default function OptimizePage() {
   };
 
   // Handle session recovery
-  const handleResumeSession = () => {
+  const handleResumeSession = async () => {
     workflowSession.resumeSession();
     setShowRecoveryModal(false);
 
-    // If session has a threadId, we need to recover the workflow state
+    // If session has a threadId, resume the workflow
     if (workflowSession.existingSession?.threadId) {
-      // The workflow hook will poll and restore state
-      workflow.reset();
-      // Manually set the threadId to trigger polling
-      fetch(`${API_URL}/api/optimize/status/${workflowSession.existingSession.threadId}?include_data=true`)
-        .then((res) => res.json())
-        .then((data) => {
-          // Workflow hook will pick up on next poll
-          console.log("Recovered session:", data);
-        })
-        .catch(console.error);
+      try {
+        await workflow.resumeWorkflow(workflowSession.existingSession.threadId);
+        console.log("Session resumed successfully");
+      } catch (error) {
+        console.error("Failed to resume session:", error);
+        // Show error to user
+        workflowSession.recordError(
+          error instanceof Error ? error.message : "Failed to resume session"
+        );
+      }
     }
   };
 
@@ -302,6 +308,23 @@ export default function OptimizePage() {
     ];
   };
 
+  // Save research data (profile/job) to backend
+  const saveResearchData = async (data: { user_profile?: Record<string, unknown>; job_posting?: Record<string, unknown> }) => {
+    if (!workflow.threadId) return;
+    try {
+      const response = await fetch(`${API_URL}/api/optimize/${workflow.threadId}/research/data`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        console.error("Failed to save research data:", await response.text());
+      }
+    } catch (error) {
+      console.error("Error saving research data:", error);
+    }
+  };
+
   // Get stages for stepper
   const getStages = () => {
     if (!workflowSession.session) {
@@ -328,8 +351,13 @@ export default function OptimizePage() {
         <CompletionScreen
           downloads={getDownloadLinks()}
           onStartNew={handleStartNewClick}
-          atsScore={85} // TODO: Get from actual ATS report
+          atsScore={exportStorage.session?.atsReport?.keyword_match_score}
+          atsReport={exportStorage.session?.atsReport}
           linkedinOptimized={true}
+          threadId={workflow.threadId || undefined}
+          jobTitle={workflow.data.jobPosting?.title}
+          companyName={workflow.data.jobPosting?.company_name}
+          resumePreviewHtml={workflow.data.resumeHtml ?? undefined}
         />
       );
     }
@@ -396,7 +424,7 @@ export default function OptimizePage() {
                     <p className="text-gray-600">{workflow.data.userProfile.headline}</p>
                   )}
                 </div>
-                {workflow.data.userProfile.experience.length > 0 && (
+                {workflow.data.userProfile.experience?.length > 0 && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-2">Experience ({workflow.data.userProfile.experience.length} roles)</p>
                     <ul className="text-sm text-gray-600 space-y-2">
@@ -409,7 +437,7 @@ export default function OptimizePage() {
                     </ul>
                   </div>
                 )}
-                {workflow.data.userProfile.skills.length > 0 && (
+                {workflow.data.userProfile.skills?.length > 0 && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-2">Skills ({workflow.data.userProfile.skills.length})</p>
                     <div className="flex flex-wrap gap-1">
@@ -455,7 +483,7 @@ export default function OptimizePage() {
                     <p className="text-gray-500 text-sm">{workflow.data.jobPosting.location}</p>
                   )}
                 </div>
-                {workflow.data.jobPosting.tech_stack.length > 0 && (
+                {workflow.data.jobPosting.tech_stack?.length > 0 && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-2">Tech Stack</p>
                     <div className="flex flex-wrap gap-1">
@@ -465,7 +493,7 @@ export default function OptimizePage() {
                     </div>
                   </div>
                 )}
-                {workflow.data.jobPosting.requirements.length > 0 && (
+                {workflow.data.jobPosting.requirements?.length > 0 && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-2">Key Requirements</p>
                     <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
@@ -497,7 +525,7 @@ export default function OptimizePage() {
                     Your Strengths
                   </h4>
                   <ul className="text-sm text-gray-600 space-y-1">
-                    {workflow.data.gapAnalysis.strengths.map((s, idx) => (
+                    {workflow.data.gapAnalysis.strengths?.map((s, idx) => (
                       <li key={idx} className="flex items-start">
                         <span className="text-green-500 mr-2">+</span>
                         {s}
@@ -505,7 +533,7 @@ export default function OptimizePage() {
                     ))}
                   </ul>
                 </div>
-                {workflow.data.gapAnalysis.transferable_skills.length > 0 && (
+                {workflow.data.gapAnalysis.transferable_skills?.length > 0 && (
                   <div>
                     <h4 className="text-sm font-semibold text-blue-700 mb-2">Transferable Skills</h4>
                     <ul className="text-sm text-gray-600 space-y-1">
@@ -528,7 +556,7 @@ export default function OptimizePage() {
                     Gaps to Address
                   </h4>
                   <ul className="text-sm text-gray-600 space-y-1">
-                    {workflow.data.gapAnalysis.gaps.map((g, idx) => (
+                    {workflow.data.gapAnalysis.gaps?.map((g, idx) => (
                       <li key={idx} className="flex items-start">
                         <span className="text-amber-500 mr-2">!</span>
                         {g}
@@ -536,7 +564,7 @@ export default function OptimizePage() {
                     ))}
                   </ul>
                 </div>
-                {workflow.data.gapAnalysis.keywords_to_include.length > 0 && (
+                {workflow.data.gapAnalysis.keywords_to_include?.length > 0 && (
                   <div>
                     <h4 className="text-sm font-semibold text-purple-700 mb-2">Keywords to Include</h4>
                     <div className="flex flex-wrap gap-1">
@@ -888,8 +916,10 @@ export default function OptimizePage() {
                       Cancel
                     </button>
                     <button
-                      onClick={() => {
-                        // TODO: Save to backend
+                      onClick={async () => {
+                        if (editingProfile) {
+                          await saveResearchData({ user_profile: { ...editingProfile } });
+                        }
                         setProfileModalOpen(false);
                       }}
                       className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
@@ -1068,8 +1098,10 @@ export default function OptimizePage() {
                       Cancel
                     </button>
                     <button
-                      onClick={() => {
-                        // TODO: Save to backend
+                      onClick={async () => {
+                        if (editingJob) {
+                          await saveResearchData({ job_posting: { ...editingJob } });
+                        }
                         setJobModalOpen(false);
                       }}
                       className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
@@ -1146,6 +1178,8 @@ export default function OptimizePage() {
             currentStep={workflow.currentStep}
             userProfile={workflow.data.userProfile}
             jobPosting={workflow.data.jobPosting}
+            profileMarkdown={workflow.data.profileMarkdown}
+            jobMarkdown={workflow.data.jobMarkdown}
             research={workflow.data.research}
             gapAnalysis={workflow.data.gapAnalysis}
             progressMessages={workflow.data.progressMessages}
@@ -1193,6 +1227,8 @@ export default function OptimizePage() {
             currentStep={workflow.currentStep}
             userProfile={workflow.data.userProfile}
             jobPosting={workflow.data.jobPosting}
+            profileMarkdown={workflow.data.profileMarkdown}
+            jobMarkdown={workflow.data.jobMarkdown}
             research={workflow.data.research}
             gapAnalysis={workflow.data.gapAnalysis}
             progressMessages={workflow.data.progressMessages}
@@ -1207,6 +1243,9 @@ export default function OptimizePage() {
             jobPosting={workflow.data.jobPosting}
             gapAnalysis={workflow.data.gapAnalysis}
             onSave={workflow.updateResume}
+            onApprove={async () => {
+              await workflow.submitAnswer("approve");
+            }}
           />
         );
 

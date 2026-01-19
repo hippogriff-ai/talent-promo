@@ -1,8 +1,34 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import CompletionScreen from "./CompletionScreen";
 
+// Mock useAuth hook
+vi.mock("@/app/hooks/useAuth", () => ({
+  useAuth: () => ({
+    isAuthenticated: false,
+    user: null,
+    login: vi.fn(),
+    logout: vi.fn(),
+  }),
+}));
+
+// Mock localStorage
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, value: string) => { store[key] = value; },
+    removeItem: (key: string) => { delete store[key]; },
+    clear: () => { store = {}; },
+  };
+})();
+Object.defineProperty(window, "localStorage", { value: localStorageMock });
+
 describe("CompletionScreen", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+  });
+
   const mockDownloads = [
     { format: "pdf", label: "Resume (PDF)", url: "/api/download/pdf" },
     { format: "docx", label: "Resume (Word)", url: "/api/download/docx" },

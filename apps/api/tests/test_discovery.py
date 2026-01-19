@@ -32,7 +32,7 @@ from workflow.nodes.discovery import (
     _get_fallback_prompts,
 )
 from workflow.graph import (
-    should_continue_after_analysis,
+    should_continue_after_research,
     should_continue_after_discovery,
     create_initial_state,
 )
@@ -171,18 +171,18 @@ class TestStageEntry:
 
     def test_research_complete_routes_to_discovery(self):
         """GIVEN research stage complete
-        WHEN routing after analysis
+        WHEN routing after research
         THEN system routes to discovery_node"""
-        state = {"current_step": "analysis"}
-        result = should_continue_after_analysis(state)
+        state = {"current_step": "research"}
+        result = should_continue_after_research(state)
         assert result == "discovery_node"
 
     def test_error_routes_to_error(self):
         """GIVEN error state
-        WHEN routing after analysis
+        WHEN routing after research
         THEN system routes to error"""
         state = {"current_step": "error"}
-        result = should_continue_after_analysis(state)
+        result = should_continue_after_research(state)
         assert result == "error"
 
     def test_discovery_not_confirmed_stays_in_discovery(self):

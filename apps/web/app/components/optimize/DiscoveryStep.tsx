@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   GapAnalysis,
   DiscoveryPrompt as BackendDiscoveryPrompt,
@@ -65,16 +65,16 @@ export default function DiscoveryStep({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
 
-  // Convert backend data to frontend format
-  const messages = discoveryMessages.map((m) => ({
+  // Convert backend data to frontend format - memoized to prevent infinite re-renders
+  const messages = useMemo(() => discoveryMessages.map((m) => ({
     role: m.role as "agent" | "user",
     content: m.content,
     timestamp: m.timestamp,
     promptId: m.prompt_id,
     experiencesExtracted: m.experiences_extracted,
-  }));
+  })), [discoveryMessages]);
 
-  const experiences: DiscoveredExperience[] = discoveredExperiences.map(
+  const experiences: DiscoveredExperience[] = useMemo(() => discoveredExperiences.map(
     (e) => ({
       id: e.id,
       description: e.description,
@@ -82,16 +82,16 @@ export default function DiscoveryStep({
       mappedRequirements: e.mapped_requirements,
       discoveredAt: e.discovered_at,
     })
-  );
+  ), [discoveredExperiences]);
 
-  const prompts: DiscoveryPrompt[] = discoveryPrompts.map((p) => ({
+  const prompts: DiscoveryPrompt[] = useMemo(() => discoveryPrompts.map((p) => ({
     id: p.id,
     question: p.question,
     intent: p.intent,
     relatedGaps: p.related_gaps || [],
     priority: p.priority,
     asked: p.asked,
-  }));
+  })), [discoveryPrompts]);
 
   // Get current prompt from interrupt payload or find next unasked
   const currentPrompt: DiscoveryPrompt | null = pendingQuestion
@@ -106,9 +106,9 @@ export default function DiscoveryStep({
     : null;
 
   const totalPrompts =
-    interruptPayload?.context?.total_prompts || prompts.length || 5;
+    interruptPayload?.context?.total_prompts ?? prompts.length ?? 5;
   const currentPromptNumber =
-    interruptPayload?.context?.prompt_number || messages.filter((m) => m.role === "agent").length;
+    interruptPayload?.context?.prompt_number ?? messages.filter((m) => m.role === "agent").length;
 
   // Initialize/sync storage on mount
   useEffect(() => {
@@ -121,7 +121,9 @@ export default function DiscoveryStep({
         storage.startSession(threadId, prompts);
       }
     }
-  }, [threadId, storage, prompts]);
+    // Only depend on threadId and session existence, not the entire storage object
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, storage.session, prompts]);
 
   // Sync from backend when data changes
   useEffect(() => {
@@ -134,9 +136,11 @@ export default function DiscoveryStep({
         discovery_exchanges: discoveryExchanges,
       });
     }
+    // Only depend on actual data changes, not the storage object reference
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    storage,
     threadId,
+    storage.session?.threadId,
     discoveryMessages,
     discoveredExperiences,
     discoveryPrompts,

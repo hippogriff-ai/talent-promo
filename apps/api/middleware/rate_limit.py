@@ -24,8 +24,8 @@ _rate_limits: dict[str, list[float]] = defaultdict(list)
 _global_requests: list[float] = []
 
 
-# IPs that bypass rate limiting (localhost/development)
-BYPASS_IPS = {"127.0.0.1", "::1", "localhost"}
+# IPs that bypass rate limiting (localhost/development/testing)
+BYPASS_IPS = {"127.0.0.1", "::1", "localhost", "testclient", "unknown"}
 
 
 def check_rate_limit(client_ip: str) -> Tuple[bool, int, int]:

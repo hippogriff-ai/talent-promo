@@ -1,4 +1,9 @@
-"""Analysis node for identifying gaps and highlights."""
+"""Analysis node for identifying gaps and highlights.
+
+Uses structured output (Pydantic) instead of JSON in prompt for cleaner,
+more reliable output parsing. Prompt is organized for optimal Anthropic
+caching: static instructions first, dynamic content last.
+"""
 
 import logging
 from datetime import datetime
@@ -6,6 +11,7 @@ from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from config import get_settings
 from workflow.state import ResumeState
@@ -13,6 +19,40 @@ from workflow.state import ResumeState
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+
+# =============================================================================
+# Structured Output Schema (Fix #3: JSON via API instead of prompt)
+# =============================================================================
+
+
+class GapAnalysisOutput(BaseModel):
+    """Structured output for gap analysis.
+
+    Using Pydantic model with with_structured_output() ensures:
+    - Type safety and validation
+    - No JSON parsing errors
+    - Cleaner prompts without JSON format instructions
+    """
+
+    strengths: list[str] = Field(
+        description="Skills and experiences the candidate already has that match the job requirements. Be specific and reference actual experience."
+    )
+    gaps: list[str] = Field(
+        description="Areas where the candidate may be lacking or needs to present differently. Be specific about what's missing."
+    )
+    recommended_emphasis: list[str] = Field(
+        description="What the candidate should highlight in their resume with explanation of why."
+    )
+    transferable_skills: list[str] = Field(
+        description="Skills from other areas that can be repositioned for this role."
+    )
+    keywords_to_include: list[str] = Field(
+        description="ATS-friendly keywords that should appear in the resume."
+    )
+    potential_concerns: list[str] = Field(
+        description="Red flags a hiring manager might notice and how to address them."
+    )
 
 
 def get_llm():
@@ -24,7 +64,22 @@ def get_llm():
     )
 
 
-GAP_ANALYSIS_PROMPT = """You are an expert career coach analyzing the fit between a candidate and a target job.
+def get_structured_llm():
+    """Get LLM configured for structured output.
+
+    Uses with_structured_output() which leverages Anthropic's tool_use
+    for reliable JSON output without needing format instructions in prompt.
+    """
+    base_llm = get_llm()
+    return base_llm.with_structured_output(GapAnalysisOutput)
+
+
+# =============================================================================
+# Prompt (Fix #4: Static content first for caching, dynamic content last)
+# =============================================================================
+
+# Static system prompt - this part gets cached by Anthropic
+GAP_ANALYSIS_SYSTEM_PROMPT = """You are an expert career coach analyzing the fit between a candidate and a target job.
 
 Your task is to identify:
 1. STRENGTHS: Skills and experiences the candidate already has that match the job
@@ -34,60 +89,67 @@ Your task is to identify:
 5. KEYWORDS: ATS-friendly keywords that should appear in the resume
 6. POTENTIAL CONCERNS: Red flags a hiring manager might notice and how to address them
 
-Output your analysis in JSON format:
-
-{
-    "strengths": [
-        "Specific strength that matches job requirements"
-    ],
-    "gaps": [
-        "Specific gap or area for improvement"
-    ],
-    "recommended_emphasis": [
-        "What to highlight with explanation"
-    ],
-    "transferable_skills": [
-        "Skill that can be repositioned"
-    ],
-    "keywords_to_include": [
-        "keyword1", "keyword2"
-    ],
-    "potential_concerns": [
-        "Concern and how to address it"
-    ]
-}
-
 Be specific and actionable. Reference actual experience from the profile and requirements from the job.
-Don't be generic - every item should be specific to this candidate and this role."""
+Don't be generic - every item should be specific to this candidate and this role.
+
+When analyzing:
+- Look for direct skill matches first
+- Identify transferable skills from adjacent domains
+- Note experience gaps but suggest how to frame existing experience
+- Extract important keywords from the job posting
+- Consider seniority alignment and career trajectory"""
 
 
 async def analyze_node(state: ResumeState) -> dict[str, Any]:
     """Analyze gaps between candidate profile and target job.
 
-    Compares:
-    - User profile (skills, experience, education)
-    - Job requirements
+    Uses structured output for reliable JSON parsing and organizes
+    the prompt for optimal Anthropic caching (static first, dynamic last).
+
+    Compares using raw text (preferred) or structured data:
+    - User profile/resume
+    - Job posting/requirements
     - Research findings about similar successful candidates
     """
     logger.info("Starting analysis node")
 
-    user_profile = state.get("user_profile")
-    job_posting = state.get("job_posting")
+    # Prefer raw text fields for LLM context (Fix #2: ensure markdown is used)
+    profile_text = state.get("profile_text") or state.get("profile_markdown") or ""
+    job_text = state.get("job_text") or state.get("job_markdown") or ""
+
+    # Log what we're using for debugging
+    logger.info(f"Analysis input - profile_text: {len(profile_text)} chars, job_text: {len(job_text)} chars")
+
+    # Fall back to structured data if no raw text
+    user_profile = state.get("user_profile") or {}
+    job_posting = state.get("job_posting") or {}
+
+    # Get metadata
+    profile_name = state.get("profile_name") or user_profile.get("name", "Candidate")
+    job_title = state.get("job_title") or job_posting.get("title", "Position")
+    job_company = state.get("job_company") or job_posting.get("company_name", "Company")
     research = state.get("research")
 
-    if not user_profile or not job_posting:
+    # Check we have either raw text or structured data
+    has_profile = bool(profile_text) or bool(user_profile)
+    has_job = bool(job_text) or bool(job_posting)
+
+    if not has_profile or not has_job:
+        logger.error(f"Missing data - has_profile: {has_profile}, has_job: {has_job}")
         return {
             "errors": [*state.get("errors", []), "Missing profile or job data for analysis"],
             "current_step": "error",
         }
 
     try:
-        llm = get_llm()
+        # Use structured output LLM
+        llm = get_structured_llm()
 
-        # Build analysis context
-        analysis_context = f"""
-CANDIDATE PROFILE:
-Name: {user_profile.get('name', 'Unknown')}
+        # Build profile section - prefer raw text (Fix #2)
+        if profile_text:
+            profile_section = profile_text[:5000]
+        else:
+            profile_section = f"""Name: {user_profile.get('name', 'Unknown')}
 Headline: {user_profile.get('headline', 'N/A')}
 Summary: {user_profile.get('summary', 'N/A')}
 
@@ -98,12 +160,13 @@ Education:
 {_format_education(user_profile.get('education', []))}
 
 Skills: {', '.join(user_profile.get('skills', []))}
-Certifications: {', '.join(user_profile.get('certifications', []))}
+Certifications: {', '.join(user_profile.get('certifications', []))}"""
 
----
-
-TARGET JOB:
-Title: {job_posting.get('title', 'Unknown')}
+        # Build job section - prefer raw text (Fix #2)
+        if job_text:
+            job_section = job_text[:4000]
+        else:
+            job_section = f"""Title: {job_posting.get('title', 'Unknown')}
 Company: {job_posting.get('company_name', 'Unknown')}
 
 Description:
@@ -115,43 +178,53 @@ Requirements:
 Preferred Qualifications:
 {chr(10).join('- ' + q for q in job_posting.get('preferred_qualifications', []))}
 
-Tech Stack: {', '.join(job_posting.get('tech_stack', []))}
+Tech Stack: {', '.join(job_posting.get('tech_stack', []))}"""
 
+        # Build research context (optional)
+        research_section = ""
+        if research:
+            research_section = f"""
 ---
 
 RESEARCH INSIGHTS:
-Company Culture: {research.get('company_culture', 'N/A') if research else 'N/A'}
-Company Values: {', '.join(research.get('company_values', [])) if research else 'N/A'}
-Hiring Patterns: {research.get('hiring_patterns', 'N/A') if research else 'N/A'}
+Company Culture: {research.get('company_culture', 'N/A')}
+Company Values: {', '.join(research.get('company_values', []))}
+Hiring Patterns: {research.get('hiring_patterns', 'N/A')}
 
 Similar Successful Candidates:
-{_format_similar_profiles(research.get('similar_profiles', []) if research else [])}
-"""
+{_format_similar_profiles(research.get('similar_profiles', []))}"""
+
+        # =================================================================
+        # FIX #4: Organize for optimal caching
+        # - System message is static (cached across all calls)
+        # - User message has dynamic content LAST
+        # =================================================================
+
+        # Dynamic content - organized for cache efficiency
+        # Put most variable content (profile) at the very end
+        user_content = f"""Analyze the fit and gaps for this candidate applying to the following position.
+
+TARGET JOB:
+Title: {job_title}
+Company: {job_company}
+
+{job_section}
+{research_section}
+---
+
+CANDIDATE PROFILE:
+{profile_section}"""
 
         messages = [
-            SystemMessage(content=GAP_ANALYSIS_PROMPT),
-            HumanMessage(content=f"Analyze the fit and gaps for this candidate:\n\n{analysis_context}"),
+            SystemMessage(content=GAP_ANALYSIS_SYSTEM_PROMPT),
+            HumanMessage(content=user_content),
         ]
 
-        response = await llm.ainvoke(messages)
+        # Call with structured output - no JSON parsing needed
+        result: GapAnalysisOutput = await llm.ainvoke(messages)
 
-        # Parse JSON from response
-        import json
-        try:
-            content = response.content
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
-
-            analysis_data = json.loads(content)
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse analysis JSON: {e}")
-            return {
-                "errors": [*state.get("errors", []), f"Failed to parse analysis: {str(e)}"],
-                "current_step": "error",
-            }
+        # Convert Pydantic model to dict
+        analysis_data = result.model_dump()
 
         logger.info(f"Analysis complete: {len(analysis_data.get('strengths', []))} strengths, {len(analysis_data.get('gaps', []))} gaps identified")
 

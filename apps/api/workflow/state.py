@@ -147,6 +147,39 @@ class GapAnalysis(BaseModel):
 # Discovery Models
 # ============================================================================
 
+class AgendaTopic(BaseModel):
+    """A high-level topic in the discovery agenda."""
+    id: str
+    title: str
+    """Short title displayed in UI, e.g., 'Leadership Experience'"""
+    goal: str
+    """What we want to discover about this topic."""
+    related_gaps: list[str] = Field(default_factory=list)
+    """Which gaps this topic addresses."""
+    priority: int = 1
+    """Order in the agenda (1 = highest priority)."""
+    status: Literal["pending", "in_progress", "covered", "skipped"] = "pending"
+    """Current status of this topic."""
+    prompts_asked: int = 0
+    """Number of prompts asked for this topic."""
+    max_prompts: int = 2
+    """Maximum prompts to ask per topic (prevents over-drilling)."""
+    experiences_found: list[str] = Field(default_factory=list)
+    """IDs of experiences discovered for this topic."""
+
+
+class DiscoveryAgenda(BaseModel):
+    """Structured agenda for the discovery phase."""
+    topics: list[AgendaTopic] = Field(default_factory=list)
+    """The 5-6 high-level topics to cover."""
+    current_topic_id: Optional[str] = None
+    """ID of the topic currently being discussed."""
+    total_topics: int = 0
+    """Total number of topics in the agenda."""
+    covered_topics: int = 0
+    """Number of topics marked as covered or skipped."""
+
+
 class DiscoveryPrompt(BaseModel):
     """A discovery prompt to surface hidden experience."""
     id: str
@@ -159,6 +192,10 @@ class DiscoveryPrompt(BaseModel):
     """Priority level (1 = highest, ordered by relevance to gaps)."""
     asked: bool = False
     """Whether this prompt has been asked."""
+    topic_id: Optional[str] = None
+    """ID of the agenda topic this prompt belongs to."""
+    is_follow_up: bool = False
+    """Whether this is a dynamically generated follow-up question."""
 
 
 class DiscoveredExperience(BaseModel):
@@ -434,7 +471,19 @@ class ResumeState(TypedDict):
     profile_markdown: Optional[str]  # Raw LinkedIn markdown from EXA
     job_markdown: Optional[str]  # Raw job posting markdown from EXA
 
-    # Parsed data (full - stored for recovery)
+    # Raw text fields (PRIMARY - used by downstream LLMs)
+    # These are preferred over structured data for LLM consumption
+    profile_text: Optional[str]  # Raw profile/resume text
+    job_text: Optional[str]  # Raw job posting text
+
+    # Extracted metadata (simple regex, no LLM)
+    # For filenames, display, and quick lookups
+    profile_name: Optional[str]  # Candidate name for filenames
+    job_title: Optional[str]  # Job title for display
+    job_company: Optional[str]  # Company name for display
+
+    # Parsed data (backward-compatible structured data for UI components)
+    # NOTE: These are minimal/empty when using raw_text extraction method
     user_profile: Optional[dict]  # Serialized UserProfile
     job_posting: Optional[dict]   # Serialized JobPostingData
 
@@ -453,6 +502,7 @@ class ResumeState(TypedDict):
     discovery_exchanges: int  # Number of conversation exchanges
     discovery_phase: Optional[str]  # "setup" or "waiting" - controls two-phase interrupt flow
     pending_prompt_id: Optional[str]  # ID of prompt awaiting response
+    discovery_agenda: Optional[dict]  # Serialized DiscoveryAgenda - structured topic tracker
 
     # Human-in-the-loop Q&A
     qa_history: list[dict]  # List of serialized QAInteraction

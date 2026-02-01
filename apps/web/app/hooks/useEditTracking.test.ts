@@ -4,19 +4,6 @@ import { renderHook, act } from "@testing-library/react";
 // Mock the dependent modules before importing the hook
 const mockRecordEvent = vi.fn();
 
-// Mock useAuth since usePreferences depends on it
-vi.mock("./useAuth", () => ({
-  useAuth: () => ({
-    isAuthenticated: false,
-    user: null,
-    isLoading: false,
-    login: vi.fn(),
-    verify: vi.fn(),
-    logout: vi.fn(),
-    refresh: vi.fn(),
-  }),
-}));
-
 // Mock usePreferences to provide the recordEvent function
 vi.mock("./usePreferences", () => ({
   usePreferences: () => ({

@@ -1,24 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useWorkflow } from "../hooks/useWorkflow";
-import { useWorkflowSession, WorkflowStage } from "../hooks/useWorkflowSession";
+import { useWorkflowSession, WorkflowStage, getStageLabel } from "../hooks/useWorkflowSession";
 import { usePreferences } from "../hooks/usePreferences";
 import { useExportStorage } from "../hooks/useExportStorage";
+import { useClientMemory } from "../hooks/useClientMemory";
 import WorkflowStepper from "../components/optimize/WorkflowStepper";
 import SessionRecoveryModal from "../components/optimize/SessionRecoveryModal";
 import StartNewSessionDialog from "../components/optimize/StartNewSessionDialog";
 import ErrorRecovery from "../components/optimize/ErrorRecovery";
 import ResearchStep from "../components/optimize/ResearchStep";
+import { ProfileEditorModal } from "../components/optimize/ProfileEditorModal";
 import DiscoveryStep from "../components/optimize/DiscoveryStep";
 import QAChat from "../components/optimize/QAChat";
 import ResumeEditor from "../components/optimize/ResumeEditor";
 import ExportStep from "../components/optimize/ExportStep";
 import CompletionScreen from "../components/optimize/CompletionScreen";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = "";
 const PENDING_INPUT_KEY = "talent_promo:pending_input";
 
 /**
@@ -49,6 +51,7 @@ export default function OptimizePage() {
   const workflowSession = useWorkflowSession();
   const { preferences } = usePreferences();
   const exportStorage = useExportStorage();
+  const clientMemory = useClientMemory();
 
   const [inputData, setInputData] = useState<{
     linkedinUrl?: string;
@@ -61,6 +64,9 @@ export default function OptimizePage() {
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [showStartNewDialog, setShowStartNewDialog] = useState(false);
   const [showCompletionScreen, setShowCompletionScreen] = useState(false);
+  const userRequestedEditRef = useRef(false);
+  const [stepOverride, setStepOverride] = useState<string | null>(null);
+  const [discoveryDone, setDiscoveryDone] = useState(false);
   const [isAutoStarting, setIsAutoStarting] = useState(false);
   const [hasCheckedPending, setHasCheckedPending] = useState(false);
 
@@ -68,11 +74,26 @@ export default function OptimizePage() {
   const [showResearchReview, setShowResearchReview] = useState(false);
   const [hasAcknowledgedResearch, setHasAcknowledgedResearch] = useState(false);
 
-  // Modal states for viewing/editing profile and job
+  // Stage navigation - for viewing completed stages (read-only review mode)
+  const [viewingStage, setViewingStage] = useState<WorkflowStage | null>(null);
+
+  // Modal states for viewing profile and job markdown
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [jobModalOpen, setJobModalOpen] = useState(false);
-  const [editingProfile, setEditingProfile] = useState<typeof workflow.data.userProfile | null>(null);
-  const [editingJob, setEditingJob] = useState<typeof workflow.data.jobPosting | null>(null);
+
+  // Edited markdown state (persisted to localStorage via clientMemory)
+  const [editedProfileMarkdown, setEditedProfileMarkdown] = useState<string | null>(null);
+  const [editedJobMarkdown, setEditedJobMarkdown] = useState<string | null>(null);
+
+  // Load saved edits from localStorage when thread changes
+  useEffect(() => {
+    if (workflow.threadId && clientMemory.isLoaded) {
+      const savedProfile = clientMemory.getProfileEdit(workflow.threadId);
+      const savedJob = clientMemory.getJobEdit(workflow.threadId);
+      if (savedProfile) setEditedProfileMarkdown(savedProfile);
+      if (savedJob) setEditedJobMarkdown(savedJob);
+    }
+  }, [workflow.threadId, clientMemory.isLoaded, clientMemory]);
 
   // Check for pending input from landing page and auto-start
   useEffect(() => {
@@ -138,9 +159,15 @@ export default function OptimizePage() {
         export_complete: workflow.currentStep === "completed" && workflow.status === "completed",
       });
 
-      // Show completion screen when workflow is done
+      // Show completion screen when workflow is done (unless user explicitly went back to edit)
       if (workflow.currentStep === "completed" && workflow.status === "completed") {
-        setShowCompletionScreen(true);
+        if (!userRequestedEditRef.current) {
+          setShowCompletionScreen(true);
+        }
+      } else {
+        // Reset the flag and step override once backend has reverted from "completed"
+        userRequestedEditRef.current = false;
+        if (stepOverride) setStepOverride(null);
       }
     }
   }, [workflow.threadId, workflow.currentStep, workflow.status, workflow.data.discoveryConfirmed]);
@@ -239,7 +266,10 @@ export default function OptimizePage() {
     setShowRecoveryModal(false);
     setShowResearchReview(false);
     setHasAcknowledgedResearch(false);
+    setViewingStage(null);
     setInputData({});
+    // Redirect to home page to start fresh
+    router.push("/");
   };
 
   // Handle "Start New" button click
@@ -260,7 +290,11 @@ export default function OptimizePage() {
     setShowCompletionScreen(false);
     setShowResearchReview(false);
     setHasAcknowledgedResearch(false);
+    setDiscoveryDone(false);
+    setViewingStage(null);
     setInputData({});
+    // Redirect to home page to start fresh
+    router.push("/");
   };
 
   // Handle error recovery
@@ -271,19 +305,87 @@ export default function OptimizePage() {
   };
 
   const handleStartFreshFromError = () => {
-    workflowSession.startFreshFromError();
+    workflowSession.clearAllSessions();
+    workflow.reset();
+    setViewingStage(null);
+    // Redirect to home page to start fresh
+    router.push("/");
+  };
+
+  // Handle paste resume option (for LinkedIn fetch failures)
+  const handlePasteResume = () => {
+    workflowSession.clearAllSessions();
+    workflow.reset();
+    setViewingStage(null);
+    // Redirect to home page with paste mode pre-selected
+    router.push("/?mode=paste");
   };
 
   // Handle stage click in stepper
   const handleStageClick = (stage: WorkflowStage) => {
     if (!workflowSession.canAccessStage(stage)) {
-      // Redirect to earliest incomplete stage
-      const targetStage = workflowSession.getEarliestIncompleteStage();
-      console.log(`Cannot access ${stage}, redirecting to ${targetStage}`);
+      // Cannot access locked stages
       return;
     }
 
-    workflowSession.setActiveStage(stage);
+    // Get current workflow stage
+    const currentWorkflowStage = mapStepToStage(workflow.currentStep);
+
+    // If clicking the current active stage, clear viewing mode
+    if (stage === currentWorkflowStage) {
+      setViewingStage(null);
+      return;
+    }
+
+    // If clicking a completed stage, enter viewing mode
+    const stageStatus = workflowSession.session?.stages[stage];
+    if (stageStatus === "completed") {
+      setViewingStage(stage);
+      workflowSession.setActiveStage(stage);
+    }
+  };
+
+  // Return to current workflow step (exit viewing mode)
+  const handleReturnToCurrentStep = () => {
+    setViewingStage(null);
+    const currentWorkflowStage = mapStepToStage(workflow.currentStep);
+    workflowSession.setActiveStage(currentWorkflowStage);
+  };
+
+  // Go back from Export to Drafting to make corrections
+  const handleGoBackToDrafting = async () => {
+    if (!workflow.threadId) return;
+
+    // Immediately hide completion screen, show editor, prevent useEffect from re-showing completion
+    userRequestedEditRef.current = true;
+    setShowCompletionScreen(false);
+    setStepOverride("editor");
+    setViewingStage(null);
+
+    // Clear the export storage for this thread
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("resume_agent:export_session");
+    }
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/optimize/${workflow.threadId}/drafting/revert`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Failed to revert to drafting:", error);
+      }
+
+      // Refresh workflow status to get updated state from backend
+      await workflow.refreshStatus();
+    } catch (error) {
+      console.error("Error reverting to drafting:", error);
+    }
   };
 
   // Calculate completed stages for error recovery
@@ -338,19 +440,270 @@ export default function OptimizePage() {
     return workflowSession.session.stages;
   };
 
-  // Get current stage
+  // Get current stage (for stepper display)
   const getCurrentStage = (): WorkflowStage => {
+    // If viewing a completed stage, highlight that in the stepper
+    if (viewingStage) return viewingStage;
     if (!workflowSession.session) return "research";
     return workflowSession.session.currentStage;
   };
 
+  // Check if we're viewing a completed stage (not the active workflow step)
+  const isViewingCompletedStage = (): boolean => {
+    return viewingStage !== null;
+  };
+
+  // Render a read-only review of a completed stage
+  const renderCompletedStageReview = (stage: WorkflowStage) => {
+    const currentWorkflowStage = mapStepToStage(workflow.currentStep);
+
+    return (
+      <div className="space-y-6">
+        {/* Return to current step banner */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="flex-shrink-0">
+                <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-blue-800">
+                  Viewing: {getStageLabel(stage)} (Completed)
+                </h3>
+                <p className="text-blue-700 text-sm">
+                  This stage has been completed. You&apos;re reviewing it in read-only mode.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleReturnToCurrentStep}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center"
+            >
+              Return to {getStageLabel(currentWorkflowStage)}
+              <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Render stage-specific review content */}
+        {stage === "research" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Profile Card */}
+              {workflow.data.userProfile && (
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                    <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    Your Profile
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <span className="font-medium text-lg">{workflow.data.userProfile.name}</span>
+                      {workflow.data.userProfile.headline && (
+                        <p className="text-gray-600">{workflow.data.userProfile.headline}</p>
+                      )}
+                    </div>
+                    {workflow.data.userProfile.experience?.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 mb-2">Experience ({workflow.data.userProfile.experience.length} roles)</p>
+                        <ul className="text-sm text-gray-600 space-y-1">
+                          {workflow.data.userProfile.experience.slice(0, 3).map((exp, idx) => (
+                            <li key={idx}>
+                              <span className="font-medium">{exp.position}</span> at {exp.company}
+                            </li>
+                          ))}
+                          {workflow.data.userProfile.experience.length > 3 && (
+                            <li className="text-gray-400">+{workflow.data.userProfile.experience.length - 3} more</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                    {workflow.data.userProfile.skills?.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 mb-2">Skills</p>
+                        <div className="flex flex-wrap gap-1">
+                          {workflow.data.userProfile.skills.slice(0, 8).map((skill, idx) => (
+                            <span key={idx} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded">{skill}</span>
+                          ))}
+                          {workflow.data.userProfile.skills.length > 8 && (
+                            <span className="px-2 py-0.5 text-gray-400 text-xs">+{workflow.data.userProfile.skills.length - 8}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Job Card */}
+              {workflow.data.jobPosting && (
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                    <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    Target Job
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <span className="font-medium text-lg">{workflow.data.jobPosting.title}</span>
+                      <p className="text-gray-600">at {workflow.data.jobPosting.company_name}</p>
+                    </div>
+                    {workflow.data.jobPosting.tech_stack?.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 mb-2">Tech Stack</p>
+                        <div className="flex flex-wrap gap-1">
+                          {workflow.data.jobPosting.tech_stack.map((tech, idx) => (
+                            <span key={idx} className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">{tech}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {workflow.data.jobPosting.requirements?.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 mb-2">Key Requirements</p>
+                        <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+                          {workflow.data.jobPosting.requirements.slice(0, 4).map((req, idx) => (
+                            <li key={idx}>{req}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Gap Analysis */}
+            {workflow.data.gapAnalysis && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Gap Analysis</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="text-sm font-semibold text-green-700 mb-2">Strengths</h4>
+                    <ul className="text-sm text-gray-600 space-y-1">
+                      {workflow.data.gapAnalysis.strengths?.map((s, idx) => (
+                        <li key={idx} className="flex items-start">
+                          <span className="text-green-500 mr-2">+</span>{s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-amber-700 mb-2">Gaps to Address</h4>
+                    <ul className="text-sm text-gray-600 space-y-1">
+                      {workflow.data.gapAnalysis.gaps?.map((g, idx) => (
+                        <li key={idx} className="flex items-start">
+                          <span className="text-amber-500 mr-2">!</span>{g}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {stage === "discovery" && (
+          <div className="space-y-6">
+            {/* Discovered Experiences */}
+            {workflow.data.discoveredExperiences && workflow.data.discoveredExperiences.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                  <svg className="w-5 h-5 mr-2 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Discovered Experiences ({workflow.data.discoveredExperiences.length})
+                </h3>
+                <div className="space-y-3">
+                  {workflow.data.discoveredExperiences.map((exp, idx) => (
+                    <div key={idx} className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-gray-800 mb-2">{exp.description}</p>
+                      {exp.mapped_requirements?.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {exp.mapped_requirements.map((req, ridx) => (
+                            <span key={ridx} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">{req}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Discovery Conversation Summary */}
+            {workflow.data.discoveryMessages && workflow.data.discoveryMessages.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Discovery Conversation</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  {workflow.data.discoveryExchanges} exchanges completed
+                </p>
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {workflow.data.discoveryMessages.slice(-6).map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded-lg ${
+                        msg.role === "assistant"
+                          ? "bg-gray-100 ml-0 mr-8"
+                          : "bg-blue-50 ml-8 mr-0"
+                      }`}
+                    >
+                      <p className="text-xs text-gray-500 mb-1">
+                        {msg.role === "assistant" ? "AI" : "You"}
+                      </p>
+                      <p className="text-sm text-gray-700">{msg.content}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {stage === "drafting" && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+              <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Draft Resume Preview
+            </h3>
+            {workflow.data.resumeHtml ? (
+              <div
+                className="prose prose-sm max-w-none border border-gray-200 rounded-lg p-4 bg-gray-50"
+                dangerouslySetInnerHTML={{ __html: workflow.data.resumeHtml }}
+              />
+            ) : (
+              <p className="text-gray-600">Resume draft content is available in the editor.</p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderCurrentStep = () => {
+    // If viewing a completed stage, show read-only review
+    if (viewingStage !== null) {
+      return renderCompletedStageReview(viewingStage);
+    }
+
     // Show completion screen if workflow is done
     if (showCompletionScreen) {
       return (
         <CompletionScreen
           downloads={getDownloadLinks()}
           onStartNew={handleStartNewClick}
+          onGoBackToEdit={handleGoBackToDrafting}
           atsScore={exportStorage.session?.atsReport?.keyword_match_score}
           atsReport={exportStorage.session?.atsReport}
           linkedinOptimized={true}
@@ -371,6 +724,7 @@ export default function OptimizePage() {
           completedStages={getCompletedStages()}
           onRetry={handleRetry}
           onStartFresh={handleStartFreshFromError}
+          onPasteResume={handlePasteResume}
         />
       );
     }
@@ -405,10 +759,7 @@ export default function OptimizePage() {
                   Your Profile
                 </h3>
                 <button
-                  onClick={() => {
-                    setEditingProfile(JSON.parse(JSON.stringify(workflow.data.userProfile)));
-                    setProfileModalOpen(true);
-                  }}
+                  onClick={() => setProfileModalOpen(true)}
                   className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
                 >
                   Show More
@@ -463,10 +814,7 @@ export default function OptimizePage() {
                   Target Job
                 </h3>
                 <button
-                  onClick={() => {
-                    setEditingJob(JSON.parse(JSON.stringify(workflow.data.jobPosting)));
-                    setJobModalOpen(true);
-                  }}
+                  onClick={() => setJobModalOpen(true)}
                   className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
                 >
                   Show More
@@ -478,7 +826,6 @@ export default function OptimizePage() {
               <div className="space-y-3">
                 <div>
                   <span className="font-medium text-lg">{workflow.data.jobPosting.title}</span>
-                  <p className="text-gray-600">at {workflow.data.jobPosting.company_name}</p>
                   {workflow.data.jobPosting.location && (
                     <p className="text-gray-500 text-sm">{workflow.data.jobPosting.location}</p>
                   )}
@@ -591,7 +938,7 @@ export default function OptimizePage() {
                 {workflow.data.research.company_culture && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-1">Company Culture</p>
-                    <p className="text-sm text-gray-600">{workflow.data.research.company_culture.slice(0, 300)}...</p>
+                    <p className="text-sm text-gray-600">{workflow.data.research.company_culture}</p>
                   </div>
                 )}
                 {workflow.data.research.company_values && workflow.data.research.company_values.length > 0 && (
@@ -624,495 +971,35 @@ export default function OptimizePage() {
             </button>
           </div>
 
-          {/* Profile Edit Modal */}
-          {profileModalOpen && editingProfile && (
-            <div className="fixed inset-0 z-50 overflow-y-auto">
-              <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center">
-                <div
-                  className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-                  onClick={() => setProfileModalOpen(false)}
-                />
-                <div className="relative bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[85vh] flex flex-col">
-                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold text-gray-900">Your Profile - Full Details</h3>
-                    <button onClick={() => setProfileModalOpen(false)} className="text-gray-400 hover:text-gray-500">
-                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-                    {/* Basic Info */}
-                    <div className="space-y-4">
-                      <h4 className="font-medium text-gray-900 border-b pb-2">Basic Information</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                          <input
-                            type="text"
-                            value={editingProfile.name || ""}
-                            onChange={(e) => setEditingProfile({...editingProfile, name: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                          <input
-                            type="email"
-                            value={editingProfile.email || ""}
-                            onChange={(e) => setEditingProfile({...editingProfile, email: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                          <input
-                            type="text"
-                            value={editingProfile.phone || ""}
-                            onChange={(e) => setEditingProfile({...editingProfile, phone: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                          <input
-                            type="text"
-                            value={editingProfile.location || ""}
-                            onChange={(e) => setEditingProfile({...editingProfile, location: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Headline</label>
-                        <input
-                          type="text"
-                          value={editingProfile.headline || ""}
-                          onChange={(e) => setEditingProfile({...editingProfile, headline: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Summary</label>
-                        <textarea
-                          value={editingProfile.summary || ""}
-                          onChange={(e) => setEditingProfile({...editingProfile, summary: e.target.value})}
-                          rows={3}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
+          {/* Profile Markdown Modal */}
+          <ProfileEditorModal
+            isOpen={profileModalOpen}
+            onClose={() => setProfileModalOpen(false)}
+            title="Your Profile"
+            markdown={editedProfileMarkdown || workflow.data.profileMarkdown}
+            onSave={(updatedMarkdown) => {
+              setEditedProfileMarkdown(updatedMarkdown);
+              if (workflow.threadId) {
+                clientMemory.saveProfileEdit(workflow.threadId, updatedMarkdown);
+              }
+              setProfileModalOpen(false);
+            }}
+          />
 
-                    {/* Experience */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between border-b pb-2">
-                        <h4 className="font-medium text-gray-900">Experience ({editingProfile.experience?.length || 0})</h4>
-                        <button
-                          onClick={() => setEditingProfile({
-                            ...editingProfile,
-                            experience: [...(editingProfile.experience || []), { company: "", position: "", is_current: false, achievements: [], technologies: [] }]
-                          })}
-                          className="text-sm text-blue-600 hover:text-blue-800"
-                        >
-                          + Add Role
-                        </button>
-                      </div>
-                      {editingProfile.experience?.map((exp, idx) => (
-                        <div key={idx} className="bg-gray-50 rounded-lg p-4 space-y-3">
-                          <div className="flex justify-between items-start">
-                            <span className="text-sm font-medium text-gray-500">Role {idx + 1}</span>
-                            <button
-                              onClick={() => setEditingProfile({
-                                ...editingProfile,
-                                experience: editingProfile.experience?.filter((_, i) => i !== idx)
-                              })}
-                              className="text-red-500 hover:text-red-700 text-sm"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">Company</label>
-                              <input
-                                type="text"
-                                value={exp.company}
-                                onChange={(e) => {
-                                  const newExp = [...(editingProfile.experience || [])];
-                                  newExp[idx] = {...exp, company: e.target.value};
-                                  setEditingProfile({...editingProfile, experience: newExp});
-                                }}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">Position</label>
-                              <input
-                                type="text"
-                                value={exp.position}
-                                onChange={(e) => {
-                                  const newExp = [...(editingProfile.experience || [])];
-                                  newExp[idx] = {...exp, position: e.target.value};
-                                  setEditingProfile({...editingProfile, experience: newExp});
-                                }}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">Start Date</label>
-                              <input
-                                type="text"
-                                value={exp.start_date || ""}
-                                onChange={(e) => {
-                                  const newExp = [...(editingProfile.experience || [])];
-                                  newExp[idx] = {...exp, start_date: e.target.value};
-                                  setEditingProfile({...editingProfile, experience: newExp});
-                                }}
-                                placeholder="e.g., Jan 2020"
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">End Date</label>
-                              <input
-                                type="text"
-                                value={exp.end_date || ""}
-                                onChange={(e) => {
-                                  const newExp = [...(editingProfile.experience || [])];
-                                  newExp[idx] = {...exp, end_date: e.target.value};
-                                  setEditingProfile({...editingProfile, experience: newExp});
-                                }}
-                                placeholder="Present or e.g., Dec 2023"
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-600 mb-1">Achievements (one per line)</label>
-                            <textarea
-                              value={exp.achievements?.join("\n") || ""}
-                              onChange={(e) => {
-                                const newExp = [...(editingProfile.experience || [])];
-                                newExp[idx] = {...exp, achievements: e.target.value.split("\n").filter(a => a.trim())};
-                                setEditingProfile({...editingProfile, experience: newExp});
-                              }}
-                              rows={2}
-                              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Skills */}
-                    <div className="space-y-3">
-                      <h4 className="font-medium text-gray-900 border-b pb-2">Skills</h4>
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Enter skills separated by commas</label>
-                        <textarea
-                          value={editingProfile.skills?.join(", ") || ""}
-                          onChange={(e) => setEditingProfile({
-                            ...editingProfile,
-                            skills: e.target.value.split(",").map(s => s.trim()).filter(s => s)
-                          })}
-                          rows={2}
-                          placeholder="Python, JavaScript, Project Management..."
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Education */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between border-b pb-2">
-                        <h4 className="font-medium text-gray-900">Education ({editingProfile.education?.length || 0})</h4>
-                        <button
-                          onClick={() => setEditingProfile({
-                            ...editingProfile,
-                            education: [...(editingProfile.education || []), { institution: "" }]
-                          })}
-                          className="text-sm text-blue-600 hover:text-blue-800"
-                        >
-                          + Add Education
-                        </button>
-                      </div>
-                      {editingProfile.education?.map((edu, idx) => (
-                        <div key={idx} className="bg-gray-50 rounded-lg p-4 space-y-3">
-                          <div className="flex justify-between items-start">
-                            <span className="text-sm font-medium text-gray-500">Education {idx + 1}</span>
-                            <button
-                              onClick={() => setEditingProfile({
-                                ...editingProfile,
-                                education: editingProfile.education?.filter((_, i) => i !== idx)
-                              })}
-                              className="text-red-500 hover:text-red-700 text-sm"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">Institution</label>
-                              <input
-                                type="text"
-                                value={edu.institution}
-                                onChange={(e) => {
-                                  const newEdu = [...(editingProfile.education || [])];
-                                  newEdu[idx] = {...edu, institution: e.target.value};
-                                  setEditingProfile({...editingProfile, education: newEdu});
-                                }}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">Degree</label>
-                              <input
-                                type="text"
-                                value={edu.degree || ""}
-                                onChange={(e) => {
-                                  const newEdu = [...(editingProfile.education || [])];
-                                  newEdu[idx] = {...edu, degree: e.target.value};
-                                  setEditingProfile({...editingProfile, education: newEdu});
-                                }}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">Field of Study</label>
-                              <input
-                                type="text"
-                                value={edu.field_of_study || ""}
-                                onChange={(e) => {
-                                  const newEdu = [...(editingProfile.education || [])];
-                                  newEdu[idx] = {...edu, field_of_study: e.target.value};
-                                  setEditingProfile({...editingProfile, education: newEdu});
-                                }}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">Graduation Year</label>
-                              <input
-                                type="text"
-                                value={edu.end_date || ""}
-                                onChange={(e) => {
-                                  const newEdu = [...(editingProfile.education || [])];
-                                  newEdu[idx] = {...edu, end_date: e.target.value};
-                                  setEditingProfile({...editingProfile, education: newEdu});
-                                }}
-                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
-                    <button
-                      onClick={() => setProfileModalOpen(false)}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (editingProfile) {
-                          await saveResearchData({ user_profile: { ...editingProfile } });
-                        }
-                        setProfileModalOpen(false);
-                      }}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-                    >
-                      Save Changes
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Job Edit Modal */}
-          {jobModalOpen && editingJob && (
-            <div className="fixed inset-0 z-50 overflow-y-auto">
-              <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center">
-                <div
-                  className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-                  onClick={() => setJobModalOpen(false)}
-                />
-                <div className="relative bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[85vh] flex flex-col">
-                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold text-gray-900">Target Job - Full Details</h3>
-                    <button onClick={() => setJobModalOpen(false)} className="text-gray-400 hover:text-gray-500">
-                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-                    {/* Basic Info */}
-                    <div className="space-y-4">
-                      <h4 className="font-medium text-gray-900 border-b pb-2">Job Details</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
-                          <input
-                            type="text"
-                            value={editingJob.title || ""}
-                            onChange={(e) => setEditingJob({...editingJob, title: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
-                          <input
-                            type="text"
-                            value={editingJob.company_name || ""}
-                            onChange={(e) => setEditingJob({...editingJob, company_name: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                          <input
-                            type="text"
-                            value={editingJob.location || ""}
-                            onChange={(e) => setEditingJob({...editingJob, location: e.target.value})}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Work Type</label>
-                          <input
-                            type="text"
-                            value={editingJob.work_type || ""}
-                            onChange={(e) => setEditingJob({...editingJob, work_type: e.target.value})}
-                            placeholder="Remote, Hybrid, On-site"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                        <textarea
-                          value={editingJob.description || ""}
-                          onChange={(e) => setEditingJob({...editingJob, description: e.target.value})}
-                          rows={4}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Requirements */}
-                    <div className="space-y-3">
-                      <h4 className="font-medium text-gray-900 border-b pb-2">Requirements</h4>
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Enter requirements (one per line)</label>
-                        <textarea
-                          value={editingJob.requirements?.join("\n") || ""}
-                          onChange={(e) => setEditingJob({
-                            ...editingJob,
-                            requirements: e.target.value.split("\n").filter(r => r.trim())
-                          })}
-                          rows={4}
-                          placeholder="5+ years experience&#10;Bachelor's degree&#10;Strong communication skills"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Preferred Qualifications */}
-                    <div className="space-y-3">
-                      <h4 className="font-medium text-gray-900 border-b pb-2">Preferred Qualifications</h4>
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Enter preferred qualifications (one per line)</label>
-                        <textarea
-                          value={editingJob.preferred_qualifications?.join("\n") || ""}
-                          onChange={(e) => setEditingJob({
-                            ...editingJob,
-                            preferred_qualifications: e.target.value.split("\n").filter(q => q.trim())
-                          })}
-                          rows={3}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Tech Stack */}
-                    <div className="space-y-3">
-                      <h4 className="font-medium text-gray-900 border-b pb-2">Tech Stack</h4>
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Enter technologies separated by commas</label>
-                        <textarea
-                          value={editingJob.tech_stack?.join(", ") || ""}
-                          onChange={(e) => setEditingJob({
-                            ...editingJob,
-                            tech_stack: e.target.value.split(",").map(t => t.trim()).filter(t => t)
-                          })}
-                          rows={2}
-                          placeholder="Python, AWS, Kubernetes, React..."
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Responsibilities */}
-                    <div className="space-y-3">
-                      <h4 className="font-medium text-gray-900 border-b pb-2">Responsibilities</h4>
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Enter responsibilities (one per line)</label>
-                        <textarea
-                          value={editingJob.responsibilities?.join("\n") || ""}
-                          onChange={(e) => setEditingJob({
-                            ...editingJob,
-                            responsibilities: e.target.value.split("\n").filter(r => r.trim())
-                          })}
-                          rows={4}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Benefits */}
-                    <div className="space-y-3">
-                      <h4 className="font-medium text-gray-900 border-b pb-2">Benefits</h4>
-                      <div>
-                        <label className="block text-sm text-gray-600 mb-1">Enter benefits (one per line)</label>
-                        <textarea
-                          value={editingJob.benefits?.join("\n") || ""}
-                          onChange={(e) => setEditingJob({
-                            ...editingJob,
-                            benefits: e.target.value.split("\n").filter(b => b.trim())
-                          })}
-                          rows={3}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
-                    <button
-                      onClick={() => setJobModalOpen(false)}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (editingJob) {
-                          await saveResearchData({ job_posting: { ...editingJob } });
-                        }
-                        setJobModalOpen(false);
-                      }}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-                    >
-                      Save Changes
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Job Markdown Modal */}
+          <ProfileEditorModal
+            isOpen={jobModalOpen}
+            onClose={() => setJobModalOpen(false)}
+            title="Target Job"
+            markdown={editedJobMarkdown || workflow.data.jobMarkdown}
+            onSave={(updatedMarkdown) => {
+              setEditedJobMarkdown(updatedMarkdown);
+              if (workflow.threadId) {
+                clientMemory.saveJobEdit(workflow.threadId, updatedMarkdown);
+              }
+              setJobModalOpen(false);
+            }}
+          />
         </div>
       );
     }
@@ -1168,8 +1055,9 @@ export default function OptimizePage() {
       );
     }
 
-    // Show step based on current workflow step
-    switch (workflow.currentStep) {
+    // Show step based on current workflow step (stepOverride takes priority)
+    const effectiveStep = stepOverride || workflow.currentStep;
+    switch (effectiveStep) {
       case "ingest":
       case "research":
       case "analysis":
@@ -1187,6 +1075,34 @@ export default function OptimizePage() {
         );
 
       case "discovery":
+        // If discovery is confirmed/skipped but we're still on discovery step,
+        // show a loading state as draft is being generated.
+        // Check both backend state AND local session state (local updates immediately on skip/confirm)
+        if (workflow.data.discoveryConfirmed || workflowSession.session?.discoveryConfirmed || discoveryDone) {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[400px] space-y-6">
+              <div className="relative">
+                <div className="w-16 h-16 border-4 border-purple-200 rounded-full"></div>
+                <div className="absolute top-0 left-0 w-16 h-16 border-4 border-purple-600 rounded-full animate-spin border-t-transparent"></div>
+              </div>
+              <div className="text-center space-y-2">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Generating Your Tailored Resume
+                </h3>
+                <p className="text-gray-600 max-w-md">
+                  Our AI is crafting a personalized resume based on your profile and the target job.
+                  This typically takes 30-60 seconds.
+                </p>
+              </div>
+              <div className="flex items-center space-x-2 text-sm text-gray-500">
+                <svg className="w-4 h-4 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                </svg>
+                <span>Please wait...</span>
+              </div>
+            </div>
+          );
+        }
         return (
           <DiscoveryStep
             threadId={workflow.threadId || ""}
@@ -1196,6 +1112,7 @@ export default function OptimizePage() {
             discoveredExperiences={workflow.data.discoveredExperiences}
             discoveryConfirmed={workflow.data.discoveryConfirmed}
             discoveryExchanges={workflow.data.discoveryExchanges}
+            discoveryAgenda={workflow.data.discoveryAgenda}
             pendingQuestion={workflow.pendingQuestion}
             onSubmitAnswer={workflow.submitAnswer}
             interruptPayload={workflow.interruptPayload as {
@@ -1205,8 +1122,22 @@ export default function OptimizePage() {
                 related_gaps?: string[];
                 prompt_number?: number;
                 total_prompts?: number;
+                current_topic?: {
+                  id?: string;
+                  title?: string;
+                  goal?: string;
+                  prompts_asked?: number;
+                  max_prompts?: number;
+                };
+                agenda_progress?: {
+                  covered_topics?: number;
+                  total_topics?: number;
+                };
               };
             } | null}
+            profileMarkdown={editedProfileMarkdown || workflow.data.profileMarkdown}
+            jobMarkdown={editedJobMarkdown || workflow.data.jobMarkdown}
+            onDiscoveryDone={() => setDiscoveryDone(true)}
           />
         );
 
@@ -1222,17 +1153,30 @@ export default function OptimizePage() {
         );
 
       case "draft":
+        // Show a dedicated drafting loading state
         return (
-          <ResearchStep
-            currentStep={workflow.currentStep}
-            userProfile={workflow.data.userProfile}
-            jobPosting={workflow.data.jobPosting}
-            profileMarkdown={workflow.data.profileMarkdown}
-            jobMarkdown={workflow.data.jobMarkdown}
-            research={workflow.data.research}
-            gapAnalysis={workflow.data.gapAnalysis}
-            progressMessages={workflow.data.progressMessages}
-          />
+          <div className="flex flex-col items-center justify-center min-h-[400px] space-y-6">
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-purple-200 rounded-full"></div>
+              <div className="absolute top-0 left-0 w-16 h-16 border-4 border-purple-600 rounded-full animate-spin border-t-transparent"></div>
+            </div>
+            <div className="text-center space-y-2">
+              <h3 className="text-xl font-semibold text-gray-900">
+                Creating Your Resume Draft
+              </h3>
+              <p className="text-gray-600 max-w-md">
+                The AI is writing a tailored resume that highlights your strengths
+                and aligns with the job requirements.
+              </p>
+            </div>
+            {workflow.data.progressMessages && workflow.data.progressMessages.length > 0 && (
+              <div className="bg-gray-50 rounded-lg p-4 max-w-md w-full">
+                <p className="text-sm text-gray-600">
+                  {workflow.data.progressMessages[workflow.data.progressMessages.length - 1]?.message || "Processing..."}
+                </p>
+              </div>
+            )}
+          </div>
         );
 
       case "editor":
@@ -1255,6 +1199,7 @@ export default function OptimizePage() {
             threadId={workflow.threadId}
             draftApproved={true}
             onComplete={() => setShowCompletionScreen(true)}
+            onGoBackToDrafting={handleGoBackToDrafting}
           />
         );
 

@@ -609,3 +609,104 @@ class TestInitialState:
         assert state["discovered_experiences"] == []
         assert state["discovery_confirmed"] is False
         assert state["discovery_exchanges"] == 0
+
+
+# =============================================================================
+# Re-run Gap Analysis Tests
+# =============================================================================
+
+
+class TestRerunGapAnalysis:
+    """Tests for re-running gap analysis."""
+
+    @pytest.mark.asyncio
+    async def test_rerun_gap_analysis_updates_state(self, sample_state):
+        """GIVEN user profile and job posting in state
+        WHEN re-running gap analysis
+        THEN system generates new gap analysis"""
+        from workflow.nodes.analysis import analyze_node, GapAnalysisOutput
+
+        with patch("workflow.nodes.analysis.get_structured_llm") as mock_structured_llm:
+            # get_structured_llm returns an LLM with with_structured_output()
+            # which returns a GapAnalysisOutput pydantic model, not a response with .content
+            mock_result = GapAnalysisOutput(
+                strengths=["New strength identified"],
+                gaps=["New gap identified"],
+                recommended_emphasis=["Focus area"],
+                transferable_skills=["Skill"],
+                keywords_to_include=["keyword"],
+                potential_concerns=[]
+            )
+            mock_structured_llm.return_value.ainvoke = AsyncMock(return_value=mock_result)
+
+            result = await analyze_node(sample_state)
+
+            assert "gap_analysis" in result
+            assert "strengths" in result["gap_analysis"]
+            assert "gaps" in result["gap_analysis"]
+
+    @pytest.mark.asyncio
+    async def test_rerun_requires_user_profile(self):
+        """GIVEN missing user_profile
+        WHEN re-running gap analysis
+        THEN system returns error"""
+        from workflow.nodes.analysis import analyze_node
+
+        state = {
+            "user_profile": None,
+            "job_posting": {"title": "Test Job"},
+            "errors": [],
+        }
+
+        result = await analyze_node(state)
+
+        assert result.get("current_step") == "error"
+        assert len(result.get("errors", [])) > 0
+
+    @pytest.mark.asyncio
+    async def test_rerun_requires_job_posting(self):
+        """GIVEN missing job_posting
+        WHEN re-running gap analysis
+        THEN system returns error"""
+        from workflow.nodes.analysis import analyze_node
+
+        state = {
+            "user_profile": {"name": "Test User"},
+            "job_posting": None,
+            "errors": [],
+        }
+
+        result = await analyze_node(state)
+
+        assert result.get("current_step") == "error"
+        assert len(result.get("errors", [])) > 0
+
+    @pytest.mark.asyncio
+    async def test_rerun_preserves_other_state(self, sample_state):
+        """GIVEN existing discovery data in state
+        WHEN re-running gap analysis
+        THEN system preserves discovery prompts and messages"""
+        from workflow.nodes.analysis import analyze_node, GapAnalysisOutput
+
+        # Add some discovery data
+        sample_state["discovery_prompts"] = [{"id": "1", "question": "Q1"}]
+        sample_state["discovery_messages"] = [{"role": "agent", "content": "Hello"}]
+
+        with patch("workflow.nodes.analysis.get_structured_llm") as mock_structured_llm:
+            mock_result = GapAnalysisOutput(
+                strengths=["Strength"],
+                gaps=["Gap"],
+                recommended_emphasis=[],
+                transferable_skills=[],
+                keywords_to_include=[],
+                potential_concerns=[]
+            )
+            mock_structured_llm.return_value.ainvoke = AsyncMock(return_value=mock_result)
+
+            result = await analyze_node(sample_state)
+
+            # analyze_node only updates gap_analysis, doesn't touch discovery fields
+            assert "gap_analysis" in result
+            # Original state discovery fields remain untouched
+            assert sample_state["discovery_prompts"] == [{"id": "1", "question": "Q1"}]
+            assert sample_state["discovery_messages"] == [{"role": "agent", "content": "Hello"}]

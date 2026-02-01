@@ -52,6 +52,7 @@ test.describe('Landing Page', () => {
   test('navigates to optimize page on valid submit', async ({ landingPage }) => {
     await landingPage.fillResumeText(testResume.text);
     await landingPage.fillJobText(testJob.text);
+    await landingPage.answerHumanChallenge();
     await landingPage.startOptimization();
     await landingPage.expectNavigatedToOptimize();
   });
@@ -62,6 +63,7 @@ test.describe('Landing Page - URL Mode Navigation', () => {
     await landingPage.goto();
     await landingPage.fillLinkedInUrl('https://linkedin.com/in/johndoe');
     await landingPage.fillJobUrl('https://jobs.example.com/senior-engineer');
+    await landingPage.answerHumanChallenge();
     await landingPage.startOptimization();
     await landingPage.expectNavigatedToOptimize();
   });

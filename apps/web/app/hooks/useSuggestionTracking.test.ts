@@ -4,19 +4,6 @@ import { renderHook, act } from "@testing-library/react";
 // Mock the dependent modules before importing the hook
 const mockRecordEvent = vi.fn();
 
-// Mock useAuth since usePreferences depends on it
-vi.mock("./useAuth", () => ({
-  useAuth: () => ({
-    isAuthenticated: false,
-    user: null,
-    isLoading: false,
-    login: vi.fn(),
-    verify: vi.fn(),
-    logout: vi.fn(),
-    refresh: vi.fn(),
-  }),
-}));
-
 // Mock usePreferences to provide the recordEvent function
 vi.mock("./usePreferences", () => ({
   usePreferences: () => ({
@@ -47,13 +34,15 @@ describe("useSuggestionTracking", () => {
 
   /**
    * Test: Hook initializes with expected functions.
-   * Verifies the hook returns all required tracking functions.
+   * Verifies the hook returns all required tracking functions including new dismiss/implicit reject.
    */
   it("returns tracking functions", () => {
     const { result } = renderHook(() => useSuggestionTracking());
 
     expect(result.current.trackAccept).toBeDefined();
     expect(result.current.trackReject).toBeDefined();
+    expect(result.current.trackDismiss).toBeDefined();
+    expect(result.current.trackImplicitReject).toBeDefined();
     expect(result.current.wrapAcceptHandler).toBeDefined();
     expect(result.current.wrapRejectHandler).toBeDefined();
   });
@@ -348,5 +337,108 @@ describe("useSuggestionTracking", () => {
     const call = mockRecordEvent.mock.calls[0][0];
     expect(call.event_data.original_text.length).toBe(500);
     expect(call.event_data.proposed_text.length).toBe(500);
+  });
+
+  /**
+   * Test: Tracks suggestion dismissal.
+   * Verifies suggestion_dismiss event is recorded with weak signal note.
+   */
+  it("tracks suggestion dismissal", async () => {
+    const { result } = renderHook(() =>
+      useSuggestionTracking({ threadId: "test-123" })
+    );
+
+    await act(async () => {
+      await result.current.trackDismiss(mockSuggestion);
+    });
+
+    expect(mockRecordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: "suggestion_dismiss",
+        thread_id: "test-123",
+        event_data: expect.objectContaining({
+          suggestion_id: "sug-123",
+          location: "experience.0",
+        }),
+      })
+    );
+  });
+
+  /**
+   * Test: Tracks implicit rejection when user edits differently.
+   * Verifies suggestion_implicit_reject event captures user's edited text.
+   */
+  it("tracks implicit rejection with user-edited text", async () => {
+    const { result } = renderHook(() =>
+      useSuggestionTracking({ threadId: "test-123" })
+    );
+
+    const userEditedText = "Built 3 internal tools that improved team efficiency";
+
+    await act(async () => {
+      await result.current.trackImplicitReject(mockSuggestion, userEditedText);
+    });
+
+    expect(mockRecordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: "suggestion_implicit_reject",
+        thread_id: "test-123",
+        event_data: expect.objectContaining({
+          suggestion_id: "sug-123",
+          location: "experience.0",
+          user_edited_text: userEditedText,
+          implicit_rejection: true,
+        }),
+      })
+    );
+  });
+
+  /**
+   * Test: Implicit rejection detects user preference for concise text.
+   * Verifies prefers_concise is detected when user writes shorter than suggestion.
+   */
+  it("detects concise preference on implicit rejection", async () => {
+    const verboseSuggestion: TrackedSuggestion = {
+      id: "sug-verbose",
+      location: "summary",
+      original_text: "Did work",
+      proposed_text: "Successfully implemented a comprehensive system that transformed the entire organization's workflow and processes resulting in significant improvements",
+      rationale: "More detail",
+    };
+
+    const { result } = renderHook(() => useSuggestionTracking());
+    const shortUserText = "Built system that improved workflow";
+
+    await act(async () => {
+      await result.current.trackImplicitReject(verboseSuggestion, shortUserText);
+    });
+
+    expect(mockRecordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_data: expect.objectContaining({
+          prefers_concise: true,
+        }),
+      })
+    );
+  });
+
+  /**
+   * Test: Implicit rejection detects when user kept original text.
+   * Verifies kept_original is set when user's edit matches original.
+   */
+  it("detects kept original on implicit rejection", async () => {
+    const { result } = renderHook(() => useSuggestionTracking());
+
+    await act(async () => {
+      await result.current.trackImplicitReject(mockSuggestion, mockSuggestion.original_text);
+    });
+
+    expect(mockRecordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_data: expect.objectContaining({
+          kept_original: true,
+        }),
+      })
+    );
   });
 });

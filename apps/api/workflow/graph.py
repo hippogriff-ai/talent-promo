@@ -3,12 +3,11 @@
 This module implements a multi-step agentic workflow with:
 - Human-in-the-loop interrupts using the interrupt() function
 - Memory hierarchy for context management
-- Production-ready checkpointing (Postgres/Redis)
+- In-memory checkpointing (no client data persistence)
 - Progressive information disclosure
 """
 
 import logging
-import os
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -27,83 +26,6 @@ from workflow.nodes.editor import editor_assist_node
 from workflow.nodes.export import export_node
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# Checkpointer Factory
-# ============================================================================
-
-def get_checkpointer(checkpointer_type: Optional[str] = None):
-    """Get appropriate checkpointer based on environment.
-
-    Args:
-        checkpointer_type: Override type ("memory", "sqlite", "postgres", "redis")
-
-    Returns:
-        Configured checkpointer instance
-
-    Environment variables:
-        LANGGRAPH_CHECKPOINTER: "memory" (default), "sqlite", "postgres", or "redis"
-        LANGGRAPH_SQLITE_PATH: Path for SQLite database (default: ./workflow_checkpoints.db)
-        DATABASE_URL: Postgres connection string
-        REDIS_URL: Redis connection string
-    """
-    checkpointer_type = checkpointer_type or os.getenv("LANGGRAPH_CHECKPOINTER", "memory")
-
-    if checkpointer_type == "sqlite":
-        # SQLite - simple file-based persistence, survives restarts
-        # We use SqliteSaver with sync workflow methods wrapped in asyncio.to_thread
-        # For async FastAPI, the workflow._run_sync() pattern is used internally
-        try:
-            from langgraph.checkpoint.sqlite import SqliteSaver
-            import sqlite3
-
-            db_path = os.getenv("LANGGRAPH_SQLITE_PATH", "./workflow_checkpoints.db")
-
-            # Create directory if needed
-            db_dir = os.path.dirname(db_path)
-            if db_dir and not os.path.exists(db_dir):
-                os.makedirs(db_dir, exist_ok=True)
-
-            # Create connection with check_same_thread=False for multi-threaded use
-            conn = sqlite3.connect(db_path, check_same_thread=False)
-            checkpointer = SqliteSaver(conn)
-            # Initialize the checkpoint tables
-            checkpointer.setup()
-            logger.info(f"Using SqliteSaver for checkpointing: {db_path}")
-            return checkpointer
-        except ImportError as e:
-            logger.warning(f"SQLite checkpointer unavailable ({e}), falling back to memory")
-            return MemorySaver()
-        except Exception as e:
-            logger.warning(f"Failed to create SQLite checkpointer ({e}), falling back to memory")
-            return MemorySaver()
-
-    elif checkpointer_type == "postgres":
-        # NOTE: PostgresSaver doesn't support async (ainvoke), and AsyncPostgresSaver
-        # requires context manager usage which doesn't fit our workflow pattern.
-        # For now, fall back to MemorySaver which supports async operations.
-        # TODO: Implement proper async Postgres checkpointing with connection pooling
-        logger.warning("Postgres checkpointer not yet async-compatible, using MemorySaver")
-        return MemorySaver()
-
-    elif checkpointer_type == "redis":
-        redis_url = os.getenv("REDIS_URL")
-        if not redis_url:
-            logger.warning("REDIS_URL not set, falling back to memory checkpointer")
-            return MemorySaver()
-
-        try:
-            from langgraph_checkpoint_redis import RedisSaver
-            logger.info("Using RedisSaver for checkpointing")
-            return RedisSaver(redis_url)
-        except ImportError:
-            logger.warning("langgraph-checkpoint-redis not installed, falling back to memory")
-            return MemorySaver()
-
-    else:
-        logger.info("Using MemorySaver for checkpointing (development mode)")
-        return MemorySaver()
 
 
 # ============================================================================
@@ -324,22 +246,17 @@ def create_initial_state(
 # Graph Builder
 # ============================================================================
 
-def create_resume_workflow(checkpointer=None):
+def create_resume_workflow():
     """Create the resume optimization workflow graph.
 
     The workflow follows these steps:
-    1. fetch_profile: Fetch LinkedIn profile or parse uploaded resume
-    2. fetch_job: Fetch job posting from URL
-    3. research: Research company, culture, similar employees
-    4. analyze: Identify gaps and recommended highlights
-    5. qa_node: Human-in-the-loop Q&A with interrupt() (up to 10 rounds)
-    6. draft_resume: Generate ATS-optimized resume
-    7. editor_assist: AI assistance for manual editing
-    8. export: Export to DOCX/PDF
-
-    Args:
-        checkpointer: Optional checkpointer override.
-                     Auto-detects from environment if not provided.
+    1. ingest: Fetch LinkedIn profile or parse uploaded resume + job
+    2. research: Research company, culture, similar employees + gap analysis
+    3. discovery: Interactive discovery conversation with user
+    4. qa_node: Human-in-the-loop Q&A with interrupt() (up to 10 rounds)
+    5. draft_resume: Generate ATS-optimized resume
+    6. editor_assist: AI assistance for manual editing
+    7. export: Export to DOCX/PDF
 
     Returns:
         Compiled LangGraph workflow
@@ -413,13 +330,8 @@ def create_resume_workflow(checkpointer=None):
     workflow.add_edge("export", END)
     workflow.add_edge("error", END)
 
-    # Get checkpointer (supports Postgres, Redis, or Memory)
-    if checkpointer is None:
-        checkpointer = get_checkpointer()
-
-    # Compile the graph
-    # Note: We don't use interrupt_before anymore since qa_node uses interrupt() directly
-    compiled = workflow.compile(checkpointer=checkpointer)
+    # Compile with in-memory checkpointing (no client data persistence)
+    compiled = workflow.compile(checkpointer=MemorySaver())
 
     logger.info("Resume optimization workflow created successfully")
 

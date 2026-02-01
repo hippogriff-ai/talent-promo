@@ -7,6 +7,7 @@ interface SuggestionCardProps {
   suggestion: DraftingSuggestion;
   onAccept: (id: string) => Promise<void>;
   onDecline: (id: string) => Promise<void>;
+  onDismiss?: (id: string) => void;
   isLoading?: boolean;
 }
 
@@ -17,6 +18,7 @@ export default function SuggestionCard({
   suggestion,
   onAccept,
   onDecline,
+  onDismiss,
   isLoading = false,
 }: SuggestionCardProps) {
   const [localLoading, setLocalLoading] = useState(false);
@@ -80,6 +82,19 @@ export default function SuggestionCard({
             </span>
           )}
         </div>
+        {/* Dismiss button - allows user to hide suggestion without accepting/declining */}
+        {isPending && onDismiss && (
+          <button
+            onClick={() => onDismiss(suggestion.id)}
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+            title="Dismiss suggestion"
+            data-testid="dismiss-button"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Original Text */}
@@ -170,6 +185,7 @@ interface SuggestionListProps {
   suggestions: DraftingSuggestion[];
   onAccept: (id: string) => Promise<void>;
   onDecline: (id: string) => Promise<void>;
+  onDismiss?: (id: string) => void;
   isLoading?: boolean;
   showResolved?: boolean;
 }
@@ -178,6 +194,7 @@ export function SuggestionList({
   suggestions,
   onAccept,
   onDecline,
+  onDismiss,
   isLoading = false,
   showResolved = false,
 }: SuggestionListProps) {
@@ -199,6 +216,7 @@ export function SuggestionList({
                 suggestion={suggestion}
                 onAccept={onAccept}
                 onDecline={onDecline}
+                onDismiss={onDismiss}
                 isLoading={isLoading}
               />
             ))}

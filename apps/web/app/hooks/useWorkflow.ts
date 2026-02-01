@@ -1,8 +1,20 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import type { ValidationResults } from "../types/guardrails";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = "";
+
+// Custom error for rate limiting
+export class RateLimitError extends Error {
+  retryAfter: number;
+
+  constructor(message: string, retryAfter: number) {
+    super(message);
+    this.name = "RateLimitError";
+    this.retryAfter = retryAfter;
+  }
+}
 
 // Types
 export interface QAInteraction {
@@ -82,10 +94,26 @@ export interface ResearchFindings {
     headline: string;
     url: string;
     key_skills: string[];
+    current_company?: string;
+    experience_highlights?: string[];
   }>;
   company_news: string[];
   industry_trends: string[];
   hiring_patterns?: string;
+  // Additional research insights from backend
+  hiring_criteria?: {
+    must_haves: string[];
+    preferred: string[];
+    keywords: string[];
+    ats_keywords: string[];
+  };
+  ideal_profile?: {
+    headline: string;
+    summary_focus: string[];
+    experience_emphasis: string[];
+    skills_priority: string[];
+    differentiators: string[];
+  };
 }
 
 export type WorkflowStatus = "idle" | "running" | "waiting_input" | "completed" | "error";
@@ -126,6 +154,27 @@ export interface DiscoveredExperience {
   discovered_at: string;
 }
 
+export type AgendaTopicStatus = "pending" | "in_progress" | "covered" | "skipped";
+
+export interface AgendaTopic {
+  id: string;
+  title: string;
+  goal: string;
+  related_gaps: string[];
+  priority: number;
+  status: AgendaTopicStatus;
+  prompts_asked: number;
+  max_prompts: number;
+  experiences_found: string[];
+}
+
+export interface DiscoveryAgenda {
+  topics: AgendaTopic[];
+  current_topic_id: string | null;
+  total_topics: number;
+  covered_topics: number;
+}
+
 export interface ProgressMessage {
   timestamp: string;
   phase: string;
@@ -153,12 +202,15 @@ export interface WorkflowState {
     gapAnalysis: GapAnalysis | null;
     qaHistory: QAInteraction[];
     resumeHtml: string | null;
+    // Validation results from guardrails
+    draftValidation: ValidationResults | null;
     // Discovery data
     discoveryPrompts: DiscoveryPrompt[];
     discoveryMessages: DiscoveryMessage[];
     discoveredExperiences: DiscoveredExperience[];
     discoveryConfirmed: boolean;
     discoveryExchanges: number;
+    discoveryAgenda: DiscoveryAgenda | null;
     // Progress messages for real-time UI
     progressMessages: ProgressMessage[];
   };
@@ -203,11 +255,13 @@ const initialState: WorkflowState = {
     gapAnalysis: null,
     qaHistory: [],
     resumeHtml: null,
+    draftValidation: null,
     discoveryPrompts: [],
     discoveryMessages: [],
     discoveredExperiences: [],
     discoveryConfirmed: false,
     discoveryExchanges: 0,
+    discoveryAgenda: null,
     progressMessages: [],
   },
 };
@@ -233,6 +287,13 @@ export function useWorkflow(): UseWorkflowReturn {
 
       if (!response.ok) {
         const error = await response.json();
+
+        // Special handling for rate limiting
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get("Retry-After") || "86400", 10);
+          throw new RateLimitError(error.detail || "Rate limit exceeded", retryAfter);
+        }
+
         throw new Error(error.detail || "Failed to start workflow");
       }
 
@@ -286,11 +347,13 @@ export function useWorkflow(): UseWorkflowReturn {
           gapAnalysis: data.gap_analysis || null,
           qaHistory: data.qa_history || [],
           resumeHtml: data.resume_html || null,
+          draftValidation: data.draft_validation || null,
           discoveryPrompts: data.discovery_prompts || [],
           discoveryMessages: data.discovery_messages || [],
           discoveredExperiences: data.discovered_experiences || [],
           discoveryConfirmed: data.discovery_confirmed ?? false,
           discoveryExchanges: data.discovery_exchanges ?? 0,
+          discoveryAgenda: data.discovery_agenda || null,
           progressMessages: data.progress_messages || [],
         },
       });
@@ -337,6 +400,7 @@ export function useWorkflow(): UseWorkflowReturn {
             gapAnalysis: data.gap_analysis || prev.data.gapAnalysis,
             qaHistory: data.qa_history || prev.data.qaHistory,
             resumeHtml: data.resume_html || prev.data.resumeHtml,
+            draftValidation: data.draft_validation || prev.data.draftValidation,
             // Discovery data - preserve messages if backend returns empty during active session
             discoveryPrompts: data.discovery_prompts || prev.data.discoveryPrompts,
             discoveryMessages: (data.discovery_messages?.length > 0)
@@ -347,6 +411,7 @@ export function useWorkflow(): UseWorkflowReturn {
             discoveredExperiences: data.discovered_experiences || prev.data.discoveredExperiences,
             discoveryConfirmed: data.discovery_confirmed ?? prev.data.discoveryConfirmed,
             discoveryExchanges: data.discovery_exchanges ?? prev.data.discoveryExchanges,
+            discoveryAgenda: data.discovery_agenda || prev.data.discoveryAgenda,
             // Progress messages
             progressMessages: data.progress_messages || prev.data.progressMessages,
           },
@@ -495,11 +560,13 @@ export function useWorkflow(): UseWorkflowReturn {
           gapAnalysis: data.gap_analysis || prev.data.gapAnalysis,
           qaHistory: data.qa_history || prev.data.qaHistory,
           resumeHtml: data.resume_html || prev.data.resumeHtml,
+          draftValidation: data.draft_validation || prev.data.draftValidation,
           discoveryPrompts: data.discovery_prompts || prev.data.discoveryPrompts,
           discoveryMessages: data.discovery_messages || prev.data.discoveryMessages,
           discoveredExperiences: data.discovered_experiences || prev.data.discoveredExperiences,
           discoveryConfirmed: data.discovery_confirmed ?? prev.data.discoveryConfirmed,
           discoveryExchanges: data.discovery_exchanges ?? prev.data.discoveryExchanges,
+          discoveryAgenda: data.discovery_agenda || prev.data.discoveryAgenda,
           progressMessages: data.progress_messages || prev.data.progressMessages,
         },
       }));

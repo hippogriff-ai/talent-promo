@@ -1,6 +1,23 @@
 import { Page, Locator, expect } from '@playwright/test';
 
 /**
+ * Human challenge question-answer mappings.
+ * These are the bot-protection questions shown on the landing page.
+ */
+const HUMAN_CHALLENGE_ANSWERS: Record<string, string> = {
+  "what sound does a cat make?": "meow",
+  "what color is a ripe banana?": "yellow",
+  "how many legs does a dog have?": "4",
+  "what do cows drink?": "water",
+  "what's the opposite of 'hot'?": "cold",
+  "what day comes after monday?": "tuesday",
+  "what do you call a baby dog?": "puppy",
+  "is water wet? (yes/no)": "yes",
+  "what noise does a duck make?": "quack",
+  "how many eyes do you have?": "2",
+};
+
+/**
  * Landing Page Object
  *
  * Represents the main landing page with the input form.
@@ -31,6 +48,10 @@ export class LandingPage {
   // Submit
   readonly startButton: Locator;
 
+  // Human verification challenge
+  readonly humanChallengeInput: Locator;
+  readonly humanChallengeCheckButton: Locator;
+
   // Error
   readonly errorMessage: Locator;
 
@@ -58,6 +79,10 @@ export class LandingPage {
 
     // Submit button
     this.startButton = page.getByRole('button', { name: /start optimization/i });
+
+    // Human verification challenge
+    this.humanChallengeInput = page.getByPlaceholder(/your answer/i);
+    this.humanChallengeCheckButton = page.getByRole('button', { name: /check/i });
 
     // Error message
     this.errorMessage = page.locator('.bg-red-50');
@@ -123,6 +148,50 @@ export class LandingPage {
     await this.switchToJobTextMode();
     await this.jobTextarea.click();
     await this.jobTextarea.fill(text);
+  }
+
+  /**
+   * Answer the human verification challenge.
+   * Reads the question, looks up the answer, fills it in, and clicks Check.
+   * Returns early if the challenge is not visible (e.g., in error scenarios).
+   */
+  async answerHumanChallenge() {
+    // Check if the challenge input is visible first
+    const isInputVisible = await this.humanChallengeInput.isVisible().catch(() => false);
+    if (!isInputVisible) {
+      // No challenge visible - likely already passed or not shown
+      return;
+    }
+
+    // Find the challenge question text (italic text ending with ?)
+    const challengeQuestionElement = this.page.locator('.italic').filter({ hasText: /\?$/ });
+    const isQuestionVisible = await challengeQuestionElement.isVisible().catch(() => false);
+
+    let answer = 'yes'; // default fallback
+
+    if (isQuestionVisible) {
+      const challengeQuestion = (await challengeQuestionElement.textContent())?.toLowerCase().trim() || '';
+
+      // Find the answer from our mapping
+      for (const [question, ans] of Object.entries(HUMAN_CHALLENGE_ANSWERS)) {
+        if (challengeQuestion.includes(question)) {
+          answer = ans;
+          break;
+        }
+      }
+    }
+
+    // Fill in the challenge answer
+    await this.humanChallengeInput.fill(answer);
+
+    // Click the Check button
+    await this.humanChallengeCheckButton.click();
+
+    // Wait for verification to pass
+    await this.page.waitForTimeout(500);
+
+    // Verify the "You're human!" message appears
+    await expect(this.page.getByText(/you're human/i)).toBeVisible({ timeout: 5000 });
   }
 
   async startOptimization() {

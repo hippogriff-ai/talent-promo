@@ -58,16 +58,6 @@ export default function Header({ showGuide }: HeaderProps) {
             )}
           </div>
 
-          {/* CTA Button */}
-          <div className="hidden md:flex items-center">
-            <Link
-              href="/optimize"
-              className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm"
-            >
-              Get Started
-            </Link>
-          </div>
-
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -127,13 +117,6 @@ export default function Header({ showGuide }: HeaderProps) {
                   How It Works
                 </button>
               )}
-              <Link
-                href="/optimize"
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 text-center"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Get Started
-              </Link>
             </div>
           </div>
         )}

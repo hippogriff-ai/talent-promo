@@ -378,6 +378,84 @@ def exa_get_structured_content(
         }
 
 
+@traceable(name="exa_linkedin_people_search", run_type="tool")
+def exa_linkedin_people_search(linkedin_url: str) -> dict:
+    """Search for a LinkedIn profile using Exa's people search category.
+
+    This is a fallback when direct URL fetching fails. Uses the new
+    category="people" feature which indexes 1B+ profiles.
+
+    Args:
+        linkedin_url: The LinkedIn profile URL to search for
+
+    Returns:
+        Dict with profile data extracted from search results
+    """
+    try:
+        exa = get_exa_client()
+
+        # Use the LinkedIn URL in the query with people category
+        # This leverages Exa's 1B+ indexed profiles
+        result = exa.search_and_contents(
+            linkedin_url,
+            category="people",
+            num_results=1,
+            text=True,
+            highlights=True
+        )
+
+        if not result.results:
+            return {
+                "success": False,
+                "error": "No matching profile found in people search",
+                "profile_data": None,
+                "raw_text": None,
+            }
+
+        profile = result.results[0]
+        raw_text = profile.text if hasattr(profile, 'text') and profile.text else ""
+
+        # Parse basic info from title (format: "Name - Title at Company")
+        title_parts = profile.title.split(" - ") if profile.title else []
+        name = title_parts[0].strip() if title_parts else ""
+        headline = title_parts[1].strip() if len(title_parts) > 1 else ""
+
+        # Extract company from headline if present
+        company = ""
+        if " at " in headline:
+            headline_parts = headline.split(" at ")
+            company = headline_parts[-1].strip()
+
+        profile_data = {
+            "name": name,
+            "headline": headline,
+            "current_company": company,
+            "summary": raw_text,
+            "source": "exa_people_search",
+            "source_url": profile.url,
+            "extraction_method": "exa_people_search",
+        }
+
+        logger.info(f"EXA people search found profile: {name} - {headline}")
+
+        return {
+            "success": True,
+            "profile_data": profile_data,
+            "raw_text": raw_text,
+            "title": profile.title,
+            "url": profile.url,
+        }
+
+    except Exception as e:
+        logger.error(f"EXA people search failed for {linkedin_url}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "profile_data": None,
+            "raw_text": None,
+        }
+
+
 @tool
 @traceable(name="exa_find_similar", run_type="tool")
 def exa_find_similar(

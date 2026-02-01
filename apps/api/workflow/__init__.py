@@ -17,7 +17,7 @@ def get_resume_state():
     return ResumeState
 
 
-def create_resume_workflow(checkpointer=None):
+def create_resume_workflow():
     """Create workflow - import lazily."""
     from workflow.graph import create_resume_workflow as _create
-    return _create(checkpointer)
+    return _create()

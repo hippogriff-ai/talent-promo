@@ -1,17 +1,18 @@
-"""Draft ratings service for user feedback on generated resumes.
+"""In-memory draft ratings service for user feedback on generated resumes.
 
 This service handles:
-- Draft rating submission and retrieval
+- Draft rating submission and retrieval (in-memory)
 - Rating history for users
 - Rating summary/analytics
+
+Privacy by design: All data is ephemeral. Use browser localStorage for persistence.
 """
 
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class DraftRating(BaseModel):
     id: Optional[str] = None
     user_id: Optional[str] = None
     thread_id: str
-    overall_quality: Optional[int] = None  # 1-5 stars
+    overall_quality: Optional[int] = Field(None, ge=1, le=5, description="1-5 star rating")
     ats_satisfaction: Optional[bool] = None
     would_send_as_is: Optional[bool] = None
     feedback_text: Optional[str] = None
@@ -42,82 +43,13 @@ class RatingSummary(BaseModel):
 
 
 class RatingsService:
-    """Service for managing draft ratings."""
+    """In-memory service for managing draft ratings."""
 
-    def __init__(self, database_url: Optional[str] = None):
-        """Initialize the service.
-
-        Args:
-            database_url: Postgres connection string. If None, uses DATABASE_URL env var.
-        """
-        self.database_url = database_url or os.getenv("DATABASE_URL")
-        self._connection = None
-
-    def _get_connection(self):
-        """Get or create database connection."""
-        if not self.database_url:
-            logger.warning("No DATABASE_URL configured, ratings service disabled")
-            return None
-
-        if self._connection is None or self._connection.closed:
-            try:
-                import psycopg2
-
-                self._connection = psycopg2.connect(self.database_url)
-            except ImportError:
-                logger.error("psycopg2 not installed, ratings service disabled")
-                return None
-            except Exception as e:
-                logger.error(f"Failed to connect to database: {e}")
-                return None
-
-        return self._connection
-
-    def ensure_tables_exist(self) -> bool:
-        """Create ratings tables if they don't exist.
-
-        Returns:
-            True if tables exist or were created, False on error.
-        """
-        conn = self._get_connection()
-        if not conn:
-            return False
-
-        try:
-            cur = conn.cursor()
-
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS draft_ratings (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID,
-                    thread_id VARCHAR(255) NOT NULL,
-                    overall_quality INTEGER CHECK (overall_quality BETWEEN 1 AND 5),
-                    ats_satisfaction BOOLEAN,
-                    would_send_as_is BOOLEAN,
-                    feedback_text TEXT,
-                    job_title VARCHAR(255),
-                    company_name VARCHAR(255),
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                )
-            """)
-
-            # Create indexes
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_draft_ratings_user_id ON draft_ratings(user_id)"
-            )
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_draft_ratings_thread_id ON draft_ratings(thread_id)"
-            )
-
-            conn.commit()
-            cur.close()
-            logger.info("Ratings tables created/verified successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to create ratings tables: {e}")
-            conn.rollback()
-            return False
+    def __init__(self):
+        """Initialize the service with in-memory storage."""
+        self._ratings: dict[str, DraftRating] = {}  # thread_id -> rating
+        self._user_ratings: dict[str, list[str]] = {}  # user_id -> list of thread_ids
+        logger.info("RatingsService initialized (in-memory)")
 
     # ==================== Rating CRUD ====================
 
@@ -135,99 +67,49 @@ class RatingsService:
         Returns:
             Saved DraftRating if successful.
         """
-        conn = self._get_connection()
-        if not conn:
-            return None
+        import uuid
 
         effective_user_id = user_id or rating.user_id
+        now = datetime.now(timezone.utc)
 
-        try:
-            cur = conn.cursor()
+        # Check if rating already exists for this thread
+        existing = self._ratings.get(rating.thread_id)
 
-            # Check if rating already exists for this thread
-            cur.execute(
-                """
-                SELECT id FROM draft_ratings
-                WHERE thread_id = %s AND (user_id = %s OR (user_id IS NULL AND %s IS NULL))
-                """,
-                (rating.thread_id, effective_user_id, effective_user_id),
+        if existing:
+            # Update existing rating
+            existing.overall_quality = rating.overall_quality
+            existing.ats_satisfaction = rating.ats_satisfaction
+            existing.would_send_as_is = rating.would_send_as_is
+            existing.feedback_text = rating.feedback_text
+            existing.job_title = rating.job_title
+            existing.company_name = rating.company_name
+            existing.updated_at = now
+            return existing
+        else:
+            # Create new rating
+            new_rating = DraftRating(
+                id=str(uuid.uuid4()),
+                user_id=effective_user_id,
+                thread_id=rating.thread_id,
+                overall_quality=rating.overall_quality,
+                ats_satisfaction=rating.ats_satisfaction,
+                would_send_as_is=rating.would_send_as_is,
+                feedback_text=rating.feedback_text,
+                job_title=rating.job_title,
+                company_name=rating.company_name,
+                created_at=now,
+                updated_at=now,
             )
-            existing = cur.fetchone()
+            self._ratings[rating.thread_id] = new_rating
 
-            if existing:
-                # Update existing rating
-                cur.execute(
-                    """
-                    UPDATE draft_ratings
-                    SET overall_quality = %s,
-                        ats_satisfaction = %s,
-                        would_send_as_is = %s,
-                        feedback_text = %s,
-                        job_title = %s,
-                        company_name = %s,
-                        updated_at = NOW()
-                    WHERE id = %s
-                    RETURNING id, user_id, thread_id, overall_quality, ats_satisfaction,
-                              would_send_as_is, feedback_text, job_title, company_name,
-                              created_at, updated_at
-                    """,
-                    (
-                        rating.overall_quality,
-                        rating.ats_satisfaction,
-                        rating.would_send_as_is,
-                        rating.feedback_text,
-                        rating.job_title,
-                        rating.company_name,
-                        existing[0],
-                    ),
-                )
-            else:
-                # Create new rating
-                cur.execute(
-                    """
-                    INSERT INTO draft_ratings
-                        (user_id, thread_id, overall_quality, ats_satisfaction,
-                         would_send_as_is, feedback_text, job_title, company_name)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id, user_id, thread_id, overall_quality, ats_satisfaction,
-                              would_send_as_is, feedback_text, job_title, company_name,
-                              created_at, updated_at
-                    """,
-                    (
-                        effective_user_id,
-                        rating.thread_id,
-                        rating.overall_quality,
-                        rating.ats_satisfaction,
-                        rating.would_send_as_is,
-                        rating.feedback_text,
-                        rating.job_title,
-                        rating.company_name,
-                    ),
-                )
+            # Track by user if user_id provided
+            if effective_user_id:
+                if effective_user_id not in self._user_ratings:
+                    self._user_ratings[effective_user_id] = []
+                if rating.thread_id not in self._user_ratings[effective_user_id]:
+                    self._user_ratings[effective_user_id].append(rating.thread_id)
 
-            row = cur.fetchone()
-            conn.commit()
-            cur.close()
-
-            if row:
-                return DraftRating(
-                    id=str(row[0]),
-                    user_id=str(row[1]) if row[1] else None,
-                    thread_id=row[2],
-                    overall_quality=row[3],
-                    ats_satisfaction=row[4],
-                    would_send_as_is=row[5],
-                    feedback_text=row[6],
-                    job_title=row[7],
-                    company_name=row[8],
-                    created_at=row[9],
-                    updated_at=row[10],
-                )
-            return None
-        except Exception as e:
-            logger.error(f"Failed to submit rating: {e}")
-            conn.rollback()
-            return None
+            return new_rating
 
     def get_rating(self, thread_id: str) -> Optional[DraftRating]:
         """Get rating for a specific thread.
@@ -238,43 +120,7 @@ class RatingsService:
         Returns:
             DraftRating if found, None otherwise.
         """
-        conn = self._get_connection()
-        if not conn:
-            return None
-
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT id, user_id, thread_id, overall_quality, ats_satisfaction,
-                       would_send_as_is, feedback_text, job_title, company_name,
-                       created_at, updated_at
-                FROM draft_ratings
-                WHERE thread_id = %s
-                """,
-                (thread_id,),
-            )
-            row = cur.fetchone()
-            cur.close()
-
-            if row:
-                return DraftRating(
-                    id=str(row[0]),
-                    user_id=str(row[1]) if row[1] else None,
-                    thread_id=row[2],
-                    overall_quality=row[3],
-                    ats_satisfaction=row[4],
-                    would_send_as_is=row[5],
-                    feedback_text=row[6],
-                    job_title=row[7],
-                    company_name=row[8],
-                    created_at=row[9],
-                    updated_at=row[10],
-                )
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get rating: {e}")
-            return None
+        return self._ratings.get(thread_id)
 
     def get_user_ratings(
         self,
@@ -285,95 +131,52 @@ class RatingsService:
         """Get rating history for a user.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
             limit: Maximum number of ratings to return.
             offset: Offset for pagination.
 
         Returns:
             List of DraftRating objects.
         """
-        conn = self._get_connection()
-        if not conn:
-            return []
+        thread_ids = self._user_ratings.get(user_id, [])
+        ratings = [self._ratings[tid] for tid in thread_ids if tid in self._ratings]
 
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT id, user_id, thread_id, overall_quality, ats_satisfaction,
-                       would_send_as_is, feedback_text, job_title, company_name,
-                       created_at, updated_at
-                FROM draft_ratings
-                WHERE user_id = %s
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (user_id, limit, offset),
-            )
-            rows = cur.fetchall()
-            cur.close()
+        # Sort by created_at descending
+        ratings = sorted(
+            ratings,
+            key=lambda r: r.created_at or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
 
-            return [
-                DraftRating(
-                    id=str(row[0]),
-                    user_id=str(row[1]) if row[1] else None,
-                    thread_id=row[2],
-                    overall_quality=row[3],
-                    ats_satisfaction=row[4],
-                    would_send_as_is=row[5],
-                    feedback_text=row[6],
-                    job_title=row[7],
-                    company_name=row[8],
-                    created_at=row[9],
-                    updated_at=row[10],
-                )
-                for row in rows
-            ]
-        except Exception as e:
-            logger.error(f"Failed to get user ratings: {e}")
-            return []
+        return ratings[offset : offset + limit]
 
     def get_rating_summary(self, user_id: str) -> RatingSummary:
         """Get rating summary statistics for a user.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
 
         Returns:
             RatingSummary with aggregate statistics.
         """
-        conn = self._get_connection()
-        if not conn:
+        ratings = self.get_user_ratings(user_id, limit=1000)
+
+        if not ratings:
             return RatingSummary(total_ratings=0)
 
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT
-                    COUNT(*) as total,
-                    AVG(overall_quality) as avg_quality,
-                    AVG(CASE WHEN would_send_as_is THEN 1.0 ELSE 0.0 END) as would_send_rate,
-                    AVG(CASE WHEN ats_satisfaction THEN 1.0 ELSE 0.0 END) as ats_rate
-                FROM draft_ratings
-                WHERE user_id = %s
-                """,
-                (user_id,),
-            )
-            row = cur.fetchone()
-            cur.close()
+        total = len(ratings)
+        quality_values = [r.overall_quality for r in ratings if r.overall_quality]
+        would_send_values = [r.would_send_as_is for r in ratings if r.would_send_as_is is not None]
+        ats_values = [r.ats_satisfaction for r in ratings if r.ats_satisfaction is not None]
 
-            if row and row[0] > 0:
-                return RatingSummary(
-                    total_ratings=row[0],
-                    average_quality=float(row[1]) if row[1] else None,
-                    would_send_rate=float(row[2]) * 100 if row[2] else None,
-                    ats_satisfaction_rate=float(row[3]) * 100 if row[3] else None,
-                )
-            return RatingSummary(total_ratings=0)
-        except Exception as e:
-            logger.error(f"Failed to get rating summary: {e}")
-            return RatingSummary(total_ratings=0)
+        return RatingSummary(
+            total_ratings=total,
+            average_quality=sum(quality_values) / len(quality_values) if quality_values else None,
+            would_send_rate=(sum(would_send_values) / len(would_send_values) * 100)
+            if would_send_values
+            else None,
+            ats_satisfaction_rate=(sum(ats_values) / len(ats_values) * 100) if ats_values else None,
+        )
 
     def delete_rating(self, rating_id: str, user_id: Optional[str] = None) -> bool:
         """Delete a rating.
@@ -385,65 +188,42 @@ class RatingsService:
         Returns:
             True if deleted successfully.
         """
-        conn = self._get_connection()
-        if not conn:
-            return False
+        # Find rating by id
+        for thread_id, rating in self._ratings.items():
+            if rating.id == rating_id:
+                if user_id and rating.user_id != user_id:
+                    return False
 
-        try:
-            cur = conn.cursor()
+                # Remove from ratings
+                del self._ratings[thread_id]
 
-            if user_id:
-                # Only delete if user owns it
-                cur.execute(
-                    "DELETE FROM draft_ratings WHERE id = %s AND user_id = %s",
-                    (rating_id, user_id),
-                )
-            else:
-                cur.execute(
-                    "DELETE FROM draft_ratings WHERE id = %s",
-                    (rating_id,),
-                )
+                # Remove from user_ratings
+                if rating.user_id and rating.user_id in self._user_ratings:
+                    self._user_ratings[rating.user_id] = [
+                        tid
+                        for tid in self._user_ratings[rating.user_id]
+                        if tid != thread_id
+                    ]
 
-            deleted = cur.rowcount > 0
-            conn.commit()
-            cur.close()
-            return deleted
-        except Exception as e:
-            logger.error(f"Failed to delete rating: {e}")
-            conn.rollback()
-            return False
+                return True
+
+        return False
 
     def get_rating_count(self, user_id: str) -> int:
         """Get total rating count for a user.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
 
         Returns:
             Number of ratings.
         """
-        conn = self._get_connection()
-        if not conn:
-            return 0
-
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT COUNT(*) FROM draft_ratings WHERE user_id = %s",
-                (user_id,),
-            )
-            result = cur.fetchone()
-            cur.close()
-            return result[0] if result else 0
-        except Exception as e:
-            logger.error(f"Failed to get rating count: {e}")
-            return 0
+        return len(self._user_ratings.get(user_id, []))
 
     def close(self):
-        """Close the database connection."""
-        if self._connection and not self._connection.closed:
-            self._connection.close()
-            self._connection = None
+        """Clear all data."""
+        self._ratings.clear()
+        self._user_ratings.clear()
 
 
 # Singleton instance for use across the application
@@ -455,5 +235,12 @@ def get_ratings_service() -> RatingsService:
     global _ratings_service
     if _ratings_service is None:
         _ratings_service = RatingsService()
-        _ratings_service.ensure_tables_exist()
     return _ratings_service
+
+
+def reset_ratings_service():
+    """Reset singleton (for testing)."""
+    global _ratings_service
+    if _ratings_service:
+        _ratings_service.close()
+    _ratings_service = None

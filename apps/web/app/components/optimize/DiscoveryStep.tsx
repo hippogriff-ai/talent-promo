@@ -6,6 +6,7 @@ import {
   DiscoveryPrompt as BackendDiscoveryPrompt,
   DiscoveryMessage as BackendDiscoveryMessage,
   DiscoveredExperience as BackendDiscoveredExperience,
+  DiscoveryAgenda as BackendDiscoveryAgenda,
 } from "../../hooks/useWorkflow";
 import {
   useDiscoveryStorage,
@@ -16,8 +17,9 @@ import GapAnalysisDisplay from "./GapAnalysisDisplay";
 import DiscoveryChat from "./DiscoveryChat";
 import DiscoveredExperiences from "./DiscoveredExperiences";
 import SessionRecoveryPrompt from "./SessionRecoveryPrompt";
+import DiscoveryAgendaComponent from "./DiscoveryAgenda";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = "";
 
 interface DiscoveryStepProps {
   threadId: string;
@@ -27,6 +29,7 @@ interface DiscoveryStepProps {
   discoveredExperiences: BackendDiscoveredExperience[];
   discoveryConfirmed: boolean;
   discoveryExchanges: number;
+  discoveryAgenda: BackendDiscoveryAgenda | null;
   pendingQuestion: string | null;
   onSubmitAnswer: (answer: string) => Promise<void>;
   interruptPayload: {
@@ -36,8 +39,24 @@ interface DiscoveryStepProps {
       related_gaps?: string[];
       prompt_number?: number;
       total_prompts?: number;
+      current_topic?: {
+        id?: string;
+        title?: string;
+        goal?: string;
+        prompts_asked?: number;
+        max_prompts?: number;
+      };
+      agenda_progress?: {
+        covered_topics?: number;
+        total_topics?: number;
+      };
     };
   } | null;
+  // Markdown content for gap analysis rerun
+  profileMarkdown?: string | null;
+  jobMarkdown?: string | null;
+  // Called after skip/confirm so parent can immediately show loading state
+  onDiscoveryDone?: () => void;
 }
 
 /**
@@ -57,13 +76,18 @@ export default function DiscoveryStep({
   discoveredExperiences,
   discoveryConfirmed,
   discoveryExchanges,
+  discoveryAgenda,
   pendingQuestion,
   onSubmitAnswer,
   interruptPayload,
+  profileMarkdown,
+  jobMarkdown,
+  onDiscoveryDone,
 }: DiscoveryStepProps) {
   const storage = useDiscoveryStorage();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
+  const [isRerunningGapAnalysis, setIsRerunningGapAnalysis] = useState(false);
 
   // Convert backend data to frontend format - memoized to prevent infinite re-renders
   const messages = useMemo(() => discoveryMessages.map((m) => ({
@@ -185,6 +209,7 @@ export default function DiscoveryStep({
       }
 
       storage.confirmDiscovery();
+      onDiscoveryDone?.();
     } catch (error) {
       console.error("Failed to confirm discovery:", error);
       storage.recordError(
@@ -192,6 +217,72 @@ export default function DiscoveryStep({
       );
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSkipDiscovery = async () => {
+    if (!confirm("Are you sure you want to skip the discovery phase? The AI will create your resume based only on your LinkedIn profile information.")) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(
+        `${API_URL}/api/optimize/${threadId}/discovery/skip`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to skip discovery");
+      }
+
+      storage.confirmDiscovery();
+      onDiscoveryDone?.();
+    } catch (error) {
+      console.error("Failed to skip discovery:", error);
+      storage.recordError(
+        error instanceof Error ? error.message : "Failed to skip discovery"
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRerunGapAnalysis = async () => {
+    setIsRerunningGapAnalysis(true);
+    try {
+      // Send current profile/job markdown to backend so it uses the
+      // latest content (including any user edits from the modal)
+      const response = await fetch(
+        `${API_URL}/api/optimize/${threadId}/gap-analysis/rerun`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profile_markdown: profileMarkdown || undefined,
+            job_markdown: jobMarkdown || undefined,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to re-run gap analysis");
+      }
+
+      // The workflow will update the gap analysis and trigger a re-render
+      // through the parent component's state update
+    } catch (error) {
+      console.error("Failed to re-run gap analysis:", error);
+      storage.recordError(
+        error instanceof Error ? error.message : "Failed to re-run gap analysis"
+      );
+    } finally {
+      setIsRerunningGapAnalysis(false);
     }
   };
 
@@ -237,7 +328,13 @@ export default function DiscoveryStep({
   return (
     <div className="space-y-6">
       {/* Gap Analysis Overview */}
-      {gapAnalysis && <GapAnalysisDisplay gapAnalysis={gapAnalysis} />}
+      {gapAnalysis && (
+        <GapAnalysisDisplay
+          gapAnalysis={gapAnalysis}
+          onRerun={handleRerunGapAnalysis}
+          isRerunning={isRerunningGapAnalysis}
+        />
+      )}
 
       {/* Main content area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -253,11 +350,17 @@ export default function DiscoveryStep({
             onSubmitResponse={handleSubmitResponse}
             onConfirmComplete={handleConfirmComplete}
             isSubmitting={isSubmitting}
+            currentTopic={interruptPayload?.context?.current_topic}
           />
         </div>
 
-        {/* Sidebar - discovered experiences and context */}
+        {/* Sidebar - agenda, discovered experiences and context */}
         <div className="space-y-6">
+          {/* Discovery Agenda */}
+          {discoveryAgenda && (
+            <DiscoveryAgendaComponent agenda={discoveryAgenda} />
+          )}
+
           <DiscoveredExperiences experiences={experiences} />
 
           {/* Context sidebar */}
@@ -294,6 +397,22 @@ export default function DiscoveryStep({
                 </span>
               </li>
             </ul>
+          </div>
+
+          {/* Skip Discovery Option */}
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <h4 className="font-medium text-gray-700 mb-2">Short on time?</h4>
+            <p className="text-sm text-gray-600 mb-3">
+              You can skip the discovery phase and proceed directly to resume drafting.
+              The AI will use only your LinkedIn profile information.
+            </p>
+            <button
+              onClick={handleSkipDiscovery}
+              disabled={isSubmitting}
+              className="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 transition-colors"
+            >
+              {isSubmitting ? "Skipping..." : "Skip Discovery & Draft Resume"}
+            </button>
           </div>
         </div>
       </div>

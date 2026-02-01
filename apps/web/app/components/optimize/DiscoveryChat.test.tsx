@@ -2,6 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import DiscoveryChat from "./DiscoveryChat";
 
+// Mock the typing effect to complete immediately for tests
+vi.mock("../../hooks/useTypingEffect", () => ({
+  useTypingEffect: (fullText: string) => ({
+    displayedText: fullText,
+    isTyping: false,
+    isComplete: true,
+    skipToEnd: vi.fn(),
+  }),
+}));
+
 describe("DiscoveryChat", () => {
   const defaultProps = {
     messages: [],
@@ -225,6 +235,9 @@ describe("DiscoveryChat", () => {
   });
 
   describe("Progress Indicator", () => {
+    /**
+     * Tests that question progress is shown in compact format "N/M".
+     */
     it("shows question number and total", () => {
       const props = {
         ...defaultProps,
@@ -234,9 +247,12 @@ describe("DiscoveryChat", () => {
 
       render(<DiscoveryChat {...props} />);
 
-      expect(screen.getByText(/Question 3 of 5/i)).toBeInTheDocument();
+      expect(screen.getByText("3/5")).toBeInTheDocument();
     });
 
+    /**
+     * Tests that exchange count is shown as compact badge "N/3 exchanges".
+     */
     it("shows exchange count", () => {
       const props = {
         ...defaultProps,
@@ -245,12 +261,15 @@ describe("DiscoveryChat", () => {
 
       render(<DiscoveryChat {...props} />);
 
-      expect(screen.getByText(/Exchanges: 2\/3/i)).toBeInTheDocument();
+      expect(screen.getByText(/2\/3 exchanges/i)).toBeInTheDocument();
     });
   });
 
   describe("Completion", () => {
-    it("shows Complete Discovery button when canConfirm is true", () => {
+    /**
+     * Tests that Complete button appears when user can confirm discovery.
+     */
+    it("shows Complete button when canConfirm is true", () => {
       const props = {
         ...defaultProps,
         canConfirm: true,
@@ -259,11 +278,14 @@ describe("DiscoveryChat", () => {
       render(<DiscoveryChat {...props} />);
 
       expect(
-        screen.getByRole("button", { name: /Complete Discovery/i })
+        screen.getByRole("button", { name: /Complete/i })
       ).toBeInTheDocument();
     });
 
-    it("does not show Complete Discovery when canConfirm is false", () => {
+    /**
+     * Tests that Complete button is hidden when user cannot confirm yet.
+     */
+    it("does not show Complete button when canConfirm is false", () => {
       const props = {
         ...defaultProps,
         canConfirm: false,
@@ -272,11 +294,14 @@ describe("DiscoveryChat", () => {
       render(<DiscoveryChat {...props} />);
 
       expect(
-        screen.queryByRole("button", { name: /Complete Discovery/i })
+        screen.queryByRole("button", { name: /Complete/i })
       ).not.toBeInTheDocument();
     });
 
-    it("calls onConfirmComplete when Complete Discovery clicked", () => {
+    /**
+     * Tests that clicking Complete button triggers the confirm callback.
+     */
+    it("calls onConfirmComplete when Complete button clicked", () => {
       const onConfirm = vi.fn().mockResolvedValue(undefined);
       const props = {
         ...defaultProps,
@@ -287,13 +312,17 @@ describe("DiscoveryChat", () => {
       render(<DiscoveryChat {...props} />);
 
       fireEvent.click(
-        screen.getByRole("button", { name: /Complete Discovery/i })
+        screen.getByRole("button", { name: /Complete/i })
       );
 
       expect(onConfirm).toHaveBeenCalled();
     });
 
-    it("shows ready to complete message when 3+ exchanges", () => {
+    /**
+     * Tests that exchange badge shows green styling when 3+ exchanges reached.
+     * In the compact UI, the "3/3 exchanges" badge gets green background.
+     */
+    it("shows green exchange badge when 3+ exchanges", () => {
       const props = {
         ...defaultProps,
         exchanges: 3,
@@ -302,7 +331,125 @@ describe("DiscoveryChat", () => {
 
       render(<DiscoveryChat {...props} />);
 
-      expect(screen.getByText(/Ready to complete/i)).toBeInTheDocument();
+      // The exchange badge should show "3/3 exchanges" with green styling
+      const badge = screen.getByText(/3\/3 exchanges/i);
+      expect(badge).toBeInTheDocument();
+      expect(badge.className).toContain("bg-green");
+    });
+  });
+
+  describe("Optimistic UI", () => {
+    /**
+     * Tests for the optimistic UI feature where user messages appear immediately
+     * before the backend responds. This improves perceived performance and UX.
+     */
+
+    it("shows user message immediately after submit (optimistic UI)", async () => {
+      // Create a promise that we can control to simulate slow backend
+      let resolveSubmit: () => void;
+      const slowSubmit = vi.fn().mockImplementation(() => {
+        return new Promise<void>((resolve) => {
+          resolveSubmit = resolve;
+        });
+      });
+
+      const props = {
+        ...defaultProps,
+        onSubmitResponse: slowSubmit,
+        pendingPrompt: {
+          id: "p1",
+          question: "Test?",
+          intent: "",
+          relatedGaps: [],
+          priority: 1,
+          asked: false,
+        },
+      };
+
+      render(<DiscoveryChat {...props} />);
+
+      const input = screen.getByPlaceholderText(/Share your experience/i);
+      fireEvent.change(input, { target: { value: "My optimistic response" } });
+
+      const sendButton = screen.getByRole("button", { name: /send/i });
+      fireEvent.click(sendButton);
+
+      // User message should appear immediately in the optimistic message container
+      expect(screen.getByTestId("optimistic-message")).toBeInTheDocument();
+      expect(screen.getByText("My optimistic response")).toBeInTheDocument();
+
+      // Clean up
+      resolveSubmit!();
+    });
+
+    it("shows AI thinking indicator while waiting for backend", async () => {
+      const slowSubmit = vi.fn().mockImplementation(() => new Promise(() => {}));
+
+      const { rerender } = render(
+        <DiscoveryChat
+          {...defaultProps}
+          onSubmitResponse={slowSubmit}
+          pendingPrompt={{
+            id: "p1",
+            question: "Test?",
+            intent: "",
+            relatedGaps: [],
+            priority: 1,
+            asked: false,
+          }}
+        />
+      );
+
+      const input = screen.getByPlaceholderText(/Share your experience/i);
+      fireEvent.change(input, { target: { value: "Test message" } });
+      fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+      // Re-render with isSubmitting: true to simulate the waiting state
+      rerender(
+        <DiscoveryChat
+          {...defaultProps}
+          onSubmitResponse={slowSubmit}
+          isSubmitting={true}
+          pendingPrompt={{
+            id: "p1",
+            question: "Test?",
+            intent: "",
+            relatedGaps: [],
+            priority: 1,
+            asked: false,
+          }}
+        />
+      );
+
+      // Should show "Thinking..." indicator
+      expect(screen.getByTestId("ai-thinking")).toBeInTheDocument();
+      expect(screen.getByText("Thinking...")).toBeInTheDocument();
+    });
+
+    it("shows skip message optimistically when skip is clicked", () => {
+      const onSubmit = vi.fn().mockImplementation(() => new Promise(() => {}));
+
+      const props = {
+        ...defaultProps,
+        onSubmitResponse: onSubmit,
+        pendingPrompt: {
+          id: "p1",
+          question: "Test?",
+          intent: "",
+          relatedGaps: [],
+          priority: 1,
+          asked: false,
+        },
+      };
+
+      render(<DiscoveryChat {...props} />);
+
+      const skipButton = screen.getByRole("button", { name: /skip/i });
+      fireEvent.click(skipButton);
+
+      // Should show "(Skipped)" message
+      expect(screen.getByText("(Skipped)")).toBeInTheDocument();
+      expect(onSubmit).toHaveBeenCalledWith("skip");
     });
   });
 

@@ -449,17 +449,33 @@ export function useWorkflowSession() {
         updates.exportComplete = backendData.export_complete;
       }
 
-      // Recalculate stages based on flags
+      // Recalculate stages based on flags AND current step
+      // The current step helps determine if we've truly moved past a stage
+      const isResearchComplete = updates.researchComplete || session.researchComplete;
+      const isDiscoveryConfirmed = updates.discoveryConfirmed || session.discoveryConfirmed;
+      const isDraftApproved = updates.draftApproved || session.draftApproved;
+      const isExportComplete = updates.exportComplete || session.exportComplete;
+
+      // Steps that indicate we've moved past discovery phase
+      const pastDiscoverySteps = ["draft", "editor", "completed"];
+      const isPastDiscovery = pastDiscoverySteps.includes(currentStep);
+
+      // Steps that indicate we've moved past drafting phase
+      const pastDraftingSteps = ["completed"];
+      const isPastDrafting = pastDraftingSteps.includes(currentStep);
+
       const updatedStages: Record<WorkflowStage, StageStatus> = {
-        research: updates.researchComplete || session.researchComplete ? "completed" : "active",
-        discovery: (updates.researchComplete || session.researchComplete)
-          ? (updates.discoveryConfirmed || session.discoveryConfirmed ? "completed" : "active")
+        research: isResearchComplete ? "completed" : "active",
+        // Discovery is only "completed" if confirmed AND we've moved to a later step
+        discovery: isResearchComplete
+          ? (isDiscoveryConfirmed && isPastDiscovery ? "completed" : "active")
           : "locked",
-        drafting: (updates.discoveryConfirmed || session.discoveryConfirmed)
-          ? (updates.draftApproved || session.draftApproved ? "completed" : "active")
+        // Drafting is only "active" if we're actually in or past the drafting step
+        drafting: (isDiscoveryConfirmed && isPastDiscovery)
+          ? (isDraftApproved && isPastDrafting ? "completed" : "active")
           : "locked",
-        export: (updates.draftApproved || session.draftApproved)
-          ? (updates.exportComplete || session.exportComplete ? "completed" : "active")
+        export: isDraftApproved && isPastDrafting
+          ? (isExportComplete ? "completed" : "active")
           : "locked",
       };
 

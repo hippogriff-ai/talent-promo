@@ -1,0 +1,198 @@
+{
+  "description": "Silver dataset for drafting prompt evaluation. Each sample includes a profile, job posting, and expectations for draft quality.",
+  "samples": [
+    {
+      "id": "software-engineer-mid",
+      "profile": {
+        "name": "Alex Chen",
+        "headline": "Software Engineer at TechCorp",
+        "summary": "5 years building web applications. Passionate about clean code.",
+        "experience": [
+          {
+            "company": "TechCorp",
+            "position": "Software Engineer",
+            "start_date": "2021",
+            "end_date": null,
+            "is_current": true,
+            "description": "Built backend services using Python and PostgreSQL. Led migration from monolith to microservices.",
+            "achievements": ["Reduced API latency by 40%", "Mentored 2 junior developers"]
+          },
+          {
+            "company": "StartupXYZ",
+            "position": "Junior Developer",
+            "start_date": "2019",
+            "end_date": "2021",
+            "is_current": false,
+            "description": "Full-stack development with React and Node.js"
+          }
+        ],
+        "skills": ["Python", "JavaScript", "PostgreSQL", "AWS", "Docker", "React", "Node.js"],
+        "education": [
+          {"institution": "State University", "degree": "BS Computer Science", "field_of_study": "Computer Science"}
+        ]
+      },
+      "job": {
+        "title": "Senior Software Engineer",
+        "company_name": "CloudScale Inc",
+        "description": "We're looking for a senior engineer to lead our platform team.",
+        "requirements": ["5+ years Python experience", "Experience with microservices", "AWS expertise", "Leadership skills"],
+        "tech_stack": ["Python", "AWS", "Kubernetes", "PostgreSQL", "Redis"],
+        "responsibilities": ["Design scalable systems", "Mentor junior engineers", "Drive technical decisions"]
+      },
+      "expectations": {
+        "should_highlight": ["microservices migration experience", "mentoring experience", "AWS skills"],
+        "should_quantify": ["40% latency improvement"],
+        "min_score": 70
+      }
+    },
+    {
+      "id": "data-scientist-career-change",
+      "profile": {
+        "name": "Jordan Smith",
+        "headline": "Business Analyst transitioning to Data Science",
+        "summary": "MBA with 3 years of business analytics. Self-taught Python and ML.",
+        "experience": [
+          {
+            "company": "FinanceCo",
+            "position": "Business Analyst",
+            "start_date": "2020",
+            "end_date": null,
+            "is_current": true,
+            "description": "Built Excel models and dashboards. Started automating reports with Python.",
+            "achievements": ["Automated weekly reporting saving 10 hours/week", "Built sales forecasting model"]
+          }
+        ],
+        "skills": ["Excel", "Python", "SQL", "Tableau", "scikit-learn", "pandas"],
+        "education": [
+          {"institution": "Business School", "degree": "MBA", "field_of_study": "Finance"}
+        ],
+        "certifications": ["Google Data Analytics Certificate", "AWS ML Specialty (in progress)"]
+      },
+      "job": {
+        "title": "Junior Data Scientist",
+        "company_name": "DataDriven Co",
+        "description": "Entry-level data science role focused on business analytics.",
+        "requirements": ["Python proficiency", "SQL skills", "Understanding of ML basics", "Strong communication"],
+        "tech_stack": ["Python", "SQL", "pandas", "scikit-learn", "Tableau"],
+        "responsibilities": ["Build predictive models", "Present insights to stakeholders", "Data cleaning and prep"]
+      },
+      "expectations": {
+        "should_highlight": ["Python automation experience", "business context understanding", "forecasting model"],
+        "should_position": "transferable skills from business analysis",
+        "min_score": 65
+      }
+    },
+    {
+      "id": "product-manager-senior",
+      "profile": {
+        "name": "Maya Rodriguez",
+        "headline": "Product Manager | B2B SaaS",
+        "summary": "7 years in product. Shipped features used by 1M+ users.",
+        "experience": [
+          {
+            "company": "SaaSCo",
+            "position": "Senior Product Manager",
+            "start_date": "2019",
+            "end_date": null,
+            "is_current": true,
+            "description": "Own roadmap for enterprise features. Work with engineering to deliver quarterly releases.",
+            "achievements": ["Launched SSO feature driving $2M ARR", "Improved onboarding reducing churn 25%", "Led team of 8 engineers"]
+          },
+          {
+            "company": "AppStartup",
+            "position": "Product Manager",
+            "start_date": "2016",
+            "end_date": "2019",
+            "is_current": false,
+            "description": "First PM hire. Built product processes from scratch."
+          }
+        ],
+        "skills": ["Product Strategy", "Roadmapping", "SQL", "Figma", "Jira", "User Research"]
+      },
+      "job": {
+        "title": "Director of Product",
+        "company_name": "EnterpriseTech",
+        "description": "Lead product strategy for our enterprise platform.",
+        "requirements": ["7+ years product experience", "Enterprise B2B experience", "Team leadership", "Technical background"],
+        "responsibilities": ["Define product vision", "Lead PM team", "Work with C-suite", "Drive revenue growth"]
+      },
+      "expectations": {
+        "should_highlight": ["$2M ARR impact", "team leadership", "enterprise feature experience"],
+        "should_demonstrate": "strategic thinking and business impact",
+        "min_score": 75
+      }
+    },
+    {
+      "id": "devops-early-career",
+      "profile": {
+        "name": "Sam Kim",
+        "headline": "DevOps Engineer | AWS Certified",
+        "summary": "2 years in DevOps. Love automation and infrastructure as code.",
+        "experience": [
+          {
+            "company": "WebAgency",
+            "position": "DevOps Engineer",
+            "start_date": "2022",
+            "end_date": null,
+            "is_current": true,
+            "description": "Manage CI/CD pipelines and AWS infrastructure for client projects.",
+            "achievements": ["Reduced deployment time from 2 hours to 15 minutes", "Set up monitoring reducing incidents 50%"]
+          }
+        ],
+        "skills": ["AWS", "Terraform", "Docker", "Kubernetes", "GitHub Actions", "Python", "Bash"],
+        "certifications": ["AWS Solutions Architect Associate", "Kubernetes CKA"]
+      },
+      "job": {
+        "title": "Cloud Infrastructure Engineer",
+        "company_name": "ScaleUp Inc",
+        "description": "Help us scale our infrastructure to support 10x growth.",
+        "requirements": ["AWS experience", "Kubernetes knowledge", "IaC tools", "Scripting skills"],
+        "tech_stack": ["AWS", "Kubernetes", "Terraform", "ArgoCD", "Datadog"]
+      },
+      "expectations": {
+        "should_highlight": ["deployment time reduction", "AWS certifications", "incident reduction"],
+        "should_demonstrate": "measurable infrastructure improvements",
+        "min_score": 70
+      }
+    },
+    {
+      "id": "marketing-manager-diverse",
+      "profile": {
+        "name": "Taylor Johnson",
+        "headline": "Marketing Manager | Growth & Brand",
+        "summary": "6 years in marketing spanning B2C and B2B. Data-driven approach.",
+        "experience": [
+          {
+            "company": "E-commerce Brand",
+            "position": "Marketing Manager",
+            "start_date": "2020",
+            "end_date": null,
+            "is_current": true,
+            "description": "Lead digital marketing and brand campaigns.",
+            "achievements": ["Grew social following 300%", "Launched influencer program generating $500K revenue", "Reduced CAC 40%"]
+          },
+          {
+            "company": "Marketing Agency",
+            "position": "Digital Marketing Specialist",
+            "start_date": "2017",
+            "end_date": "2020",
+            "description": "Managed campaigns for 10+ clients across industries."
+          }
+        ],
+        "skills": ["Google Ads", "Facebook Ads", "SEO", "Content Marketing", "Analytics", "HubSpot"]
+      },
+      "job": {
+        "title": "Head of Growth",
+        "company_name": "Tech Startup",
+        "description": "Own all growth initiatives for our Series A startup.",
+        "requirements": ["5+ years marketing experience", "Track record of driving growth", "Analytical mindset", "Startup experience preferred"],
+        "responsibilities": ["Build growth team", "Own acquisition strategy", "Report to CEO"]
+      },
+      "expectations": {
+        "should_highlight": ["300% social growth", "$500K influencer revenue", "40% CAC reduction"],
+        "should_demonstrate": "leadership readiness and growth metrics",
+        "min_score": 70
+      }
+    }
+  ]
+}

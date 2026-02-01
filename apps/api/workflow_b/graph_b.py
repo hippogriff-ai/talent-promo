@@ -14,9 +14,9 @@ import logging
 from datetime import datetime
 
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 
 from workflow.state import ResumeState
-from workflow.graph import get_checkpointer
 from workflow_b.planner import (
     PlannerState,
     create_initial_plan,
@@ -184,7 +184,7 @@ def route_after_agent(state: ResumeState) -> str:
 # Graph Builder
 # ============================================================================
 
-def create_workflow_b(checkpointer=None):
+def create_workflow_b():
     """Create Deep Agents workflow (Variant B).
 
     This workflow uses a coordinator pattern instead of explicit routing.
@@ -228,11 +228,8 @@ def create_workflow_b(checkpointer=None):
             {"coordinator": "coordinator", "discovery_agent": "discovery_agent", "end": END},
         )
 
-    # Get checkpointer
-    if checkpointer is None:
-        checkpointer = get_checkpointer()
-
-    compiled = workflow.compile(checkpointer=checkpointer)
+    # Compile with in-memory checkpointing (no client data persistence)
+    compiled = workflow.compile(checkpointer=MemorySaver())
     logger.info("Deep Agents workflow (Variant B) created")
 
     return compiled

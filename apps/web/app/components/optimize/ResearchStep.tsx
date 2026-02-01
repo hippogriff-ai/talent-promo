@@ -17,6 +17,29 @@ interface ProgressMessage {
   detail: string;
 }
 
+/**
+ * Truncate text at word boundary to avoid cutting mid-word.
+ * Tries to break at sentence end if possible within limit.
+ */
+function truncateAtWord(text: string, maxLength: number): string {
+  if (!text || text.length <= maxLength) return text;
+
+  // Try to find a sentence boundary within the limit
+  const sentenceEnd = text.slice(0, maxLength).lastIndexOf('. ');
+  if (sentenceEnd > maxLength * 0.6) {
+    return text.slice(0, sentenceEnd + 1);
+  }
+
+  // Fall back to word boundary
+  const lastSpace = text.slice(0, maxLength).lastIndexOf(' ');
+  if (lastSpace > maxLength * 0.7) {
+    return text.slice(0, lastSpace) + '...';
+  }
+
+  // Last resort: just cut at max length
+  return text.slice(0, maxLength) + '...';
+}
+
 interface ResearchStepProps {
   currentStep: WorkflowStep;
   userProfile: UserProfile | null;
@@ -33,49 +56,304 @@ interface ResearchStepProps {
   onUpdateJobMarkdown?: (markdown: string) => void;
 }
 
-// Modal component for viewing/editing profile or job
-function DataModal({
+// Full research view for modal
+function ResearchFullView({ research }: { research: ResearchFindings }) {
+  return (
+    <div className="space-y-6">
+      {/* Company Overview */}
+      {research.company_overview && (
+        <div>
+          <h5 className="font-semibold text-gray-800 mb-2">Company Overview</h5>
+          <p className="text-gray-600 text-sm whitespace-pre-wrap">{research.company_overview}</p>
+        </div>
+      )}
+
+      {/* Company Culture */}
+      {research.company_culture && (
+        <div>
+          <h5 className="font-semibold text-gray-800 mb-2">Company Culture</h5>
+          <p className="text-gray-600 text-sm whitespace-pre-wrap">{research.company_culture}</p>
+        </div>
+      )}
+
+      {/* Company Values */}
+      {research.company_values && research.company_values.length > 0 && (
+        <div>
+          <h5 className="font-semibold text-gray-800 mb-2">Company Values</h5>
+          <div className="flex flex-wrap gap-2">
+            {research.company_values.map((value, idx) => (
+              <span
+                key={idx}
+                className="px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full"
+              >
+                {value}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tech Stack Details */}
+      {research.tech_stack_details && research.tech_stack_details.length > 0 && (
+        <div>
+          <h5 className="font-semibold text-gray-800 mb-2">Tech Stack Details</h5>
+          <div className="space-y-2">
+            {research.tech_stack_details.map((tech, idx) => (
+              <div key={idx} className="bg-gray-50 rounded-lg p-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-900">{tech.technology}</span>
+                  {tech.importance && (
+                    <span className={`px-2 py-0.5 text-xs rounded ${
+                      tech.importance === 'high' ? 'bg-red-100 text-red-700' :
+                      tech.importance === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {tech.importance} importance
+                    </span>
+                  )}
+                </div>
+                {tech.usage && (
+                  <p className="text-sm text-gray-600 mt-1">{tech.usage}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Similar Profiles */}
+      {research.similar_profiles && research.similar_profiles.length > 0 && (
+        <div>
+          <h5 className="font-semibold text-gray-800 mb-2">Similar Successful Profiles</h5>
+          <div className="space-y-4">
+            {research.similar_profiles.map((profile, idx) => (
+              <div key={idx} className="border-l-2 border-blue-200 pl-3 bg-blue-50/30 py-2 rounded-r">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">{profile.name}</p>
+                    <p className="text-sm text-gray-600">{profile.headline}</p>
+                    {profile.current_company && (
+                      <p className="text-xs text-gray-500 mt-0.5">Currently at: {profile.current_company}</p>
+                    )}
+                  </div>
+                  {profile.url && (
+                    <a
+                      href={profile.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 text-xs flex items-center"
+                    >
+                      View Profile
+                      <svg className="w-3 h-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  )}
+                </div>
+                {profile.key_skills && profile.key_skills.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {profile.key_skills.map((skill, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {profile.experience_highlights && profile.experience_highlights.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs text-gray-500 font-medium">Key Accomplishments:</p>
+                    <ul className="text-xs text-gray-600 mt-1 space-y-0.5">
+                      {profile.experience_highlights.slice(0, 3).map((highlight, i) => (
+                        <li key={i} className="flex items-start">
+                          <span className="text-green-500 mr-1">✓</span>
+                          {highlight}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Hiring Patterns */}
+      {research.hiring_patterns && (
+        <div>
+          <h5 className="font-semibold text-gray-800 mb-2">Hiring Patterns</h5>
+          <p className="text-gray-600 text-sm whitespace-pre-wrap">{research.hiring_patterns}</p>
+        </div>
+      )}
+
+      {/* Industry Trends */}
+      {research.industry_trends && research.industry_trends.length > 0 && (
+        <div>
+          <h5 className="font-semibold text-gray-800 mb-2">Industry Trends</h5>
+          <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+            {research.industry_trends.map((trend, idx) => (
+              <li key={idx}>{trend}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Company News */}
+      {research.company_news && research.company_news.length > 0 && (
+        <div>
+          <h5 className="font-semibold text-gray-800 mb-2">Recent Company News</h5>
+          <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+            {research.company_news.map((news, idx) => (
+              <li key={idx}>{news}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Hiring Criteria */}
+      {research.hiring_criteria && (
+        <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+          <h5 className="font-semibold text-amber-800 mb-3 flex items-center">
+            <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Hiring Criteria
+          </h5>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {research.hiring_criteria.must_haves && research.hiring_criteria.must_haves.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-red-700 mb-1">Must-Haves</p>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  {research.hiring_criteria.must_haves.map((item, idx) => (
+                    <li key={idx} className="flex items-start">
+                      <span className="text-red-500 mr-2">•</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {research.hiring_criteria.preferred && research.hiring_criteria.preferred.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-amber-700 mb-1">Preferred</p>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  {research.hiring_criteria.preferred.map((item, idx) => (
+                    <li key={idx} className="flex items-start">
+                      <span className="text-amber-500 mr-2">★</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          {((research.hiring_criteria.keywords && research.hiring_criteria.keywords.length > 0) ||
+            (research.hiring_criteria.ats_keywords && research.hiring_criteria.ats_keywords.length > 0)) && (
+            <div className="mt-3 pt-3 border-t border-amber-200">
+              <p className="text-sm font-medium text-amber-700 mb-2">Keywords for ATS Optimization</p>
+              <div className="flex flex-wrap gap-1">
+                {[...(research.hiring_criteria.keywords || []), ...(research.hiring_criteria.ats_keywords || [])].map((kw, idx) => (
+                  <span key={idx} className="px-2 py-0.5 bg-amber-100 text-amber-800 text-xs rounded">
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Ideal Profile */}
+      {research.ideal_profile && (
+        <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+          <h5 className="font-semibold text-green-800 mb-3 flex items-center">
+            <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Ideal Candidate Profile
+          </h5>
+
+          {research.ideal_profile.headline && (
+            <div className="mb-3">
+              <p className="text-sm font-medium text-green-700">Recommended Headline</p>
+              <p className="text-sm text-gray-700 bg-white rounded px-3 py-2 mt-1 border border-green-200">
+                {research.ideal_profile.headline}
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {research.ideal_profile.summary_focus && research.ideal_profile.summary_focus.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-green-700 mb-1">Summary Focus Areas</p>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  {research.ideal_profile.summary_focus.map((item, idx) => (
+                    <li key={idx} className="flex items-start">
+                      <span className="text-green-500 mr-2">→</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {research.ideal_profile.experience_emphasis && research.ideal_profile.experience_emphasis.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-green-700 mb-1">Experience to Emphasize</p>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  {research.ideal_profile.experience_emphasis.map((item, idx) => (
+                    <li key={idx} className="flex items-start">
+                      <span className="text-green-500 mr-2">→</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {research.ideal_profile.skills_priority && research.ideal_profile.skills_priority.length > 0 && (
+            <div className="mt-3">
+              <p className="text-sm font-medium text-green-700 mb-1">Priority Skills</p>
+              <div className="flex flex-wrap gap-1">
+                {research.ideal_profile.skills_priority.map((skill, idx) => (
+                  <span key={idx} className="px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded">
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {research.ideal_profile.differentiators && research.ideal_profile.differentiators.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-green-200">
+              <p className="text-sm font-medium text-green-700 mb-1">Differentiators (What Makes You Stand Out)</p>
+              <ul className="text-sm text-gray-600 space-y-1">
+                {research.ideal_profile.differentiators.map((item, idx) => (
+                  <li key={idx} className="flex items-start">
+                    <span className="text-green-500 mr-2">✨</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Research modal component
+function ResearchModal({
   isOpen,
   onClose,
-  title,
-  data,
-  type,
-  onSave,
+  research,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
-  data: UserProfile | JobPosting | null;
-  type: "profile" | "job";
-  onSave?: (data: UserProfile | JobPosting) => void;
+  research: ResearchFindings | null;
 }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedJson, setEditedJson] = useState("");
-  const [error, setError] = useState("");
-
-  if (!isOpen || !data) return null;
-
-  const handleEdit = () => {
-    setEditedJson(JSON.stringify(data, null, 2));
-    setIsEditing(true);
-    setError("");
-  };
-
-  const handleSave = () => {
-    try {
-      const parsed = JSON.parse(editedJson);
-      onSave?.(parsed);
-      setIsEditing(false);
-      setError("");
-    } catch {
-      setError("Invalid JSON format");
-    }
-  };
-
-  const handleCancel = () => {
-    setIsEditing(false);
-    setError("");
-  };
+  if (!isOpen || !research) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -90,7 +368,12 @@ function DataModal({
         <div className="relative bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+              <svg className="w-5 h-5 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              Research Insights - Full Details
+            </h3>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-500"
@@ -103,234 +386,20 @@ function DataModal({
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            {isEditing ? (
-              <div className="space-y-3">
-                <p className="text-sm text-gray-600">
-                  Edit the JSON below to correct any parsing errors:
-                </p>
-                <textarea
-                  value={editedJson}
-                  onChange={(e) => setEditedJson(e.target.value)}
-                  className="w-full h-96 font-mono text-sm p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  spellCheck={false}
-                />
-                {error && (
-                  <p className="text-red-600 text-sm">{error}</p>
-                )}
-              </div>
-            ) : type === "profile" ? (
-              <ProfileFullView profile={data as UserProfile} />
-            ) : (
-              <JobFullView job={data as JobPosting} />
-            )}
+            <ResearchFullView research={research} />
           </div>
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
-            {isEditing ? (
-              <>
-                <button
-                  onClick={handleCancel}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSave}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-                >
-                  Save Changes
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={handleEdit}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  Edit JSON
-                </button>
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-                >
-                  Close
-                </button>
-              </>
-            )}
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            >
+              Close
+            </button>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// Full profile view for modal
-function ProfileFullView({ profile }: { profile: UserProfile }) {
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h4 className="text-xl font-bold text-gray-900">{profile.name}</h4>
-        {profile.headline && (
-          <p className="text-gray-600 mt-1">{profile.headline}</p>
-        )}
-        {profile.email && (
-          <p className="text-sm text-gray-500 mt-1">{profile.email}</p>
-        )}
-        {profile.location && (
-          <p className="text-sm text-gray-500">{profile.location}</p>
-        )}
-      </div>
-
-      {/* Summary */}
-      {profile.summary && (
-        <div>
-          <h5 className="font-semibold text-gray-800 mb-2">Summary</h5>
-          <p className="text-gray-600 text-sm whitespace-pre-wrap">{profile.summary}</p>
-        </div>
-      )}
-
-      {/* Experience */}
-      {profile.experience && profile.experience.length > 0 && (
-        <div>
-          <h5 className="font-semibold text-gray-800 mb-2">Experience ({profile.experience.length})</h5>
-          <div className="space-y-3">
-            {profile.experience.map((exp, idx) => (
-              <div key={idx} className="border-l-2 border-blue-200 pl-3">
-                <p className="font-medium text-gray-900">{exp.position}</p>
-                <p className="text-sm text-gray-600">{exp.company}</p>
-                <p className="text-xs text-gray-500">
-                  {exp.start_date} - {exp.end_date || "Present"}
-                </p>
-                {exp.achievements && exp.achievements.length > 0 && (
-                  <ul className="mt-2 text-sm text-gray-600 list-disc list-inside">
-                    {exp.achievements.map((ach, i) => (
-                      <li key={i}>{ach}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Education */}
-      {profile.education && profile.education.length > 0 && (
-        <div>
-          <h5 className="font-semibold text-gray-800 mb-2">Education</h5>
-          <div className="space-y-2">
-            {profile.education.map((edu, idx) => (
-              <div key={idx}>
-                <p className="font-medium text-gray-900">{edu.institution}</p>
-                <p className="text-sm text-gray-600">
-                  {edu.degree} {edu.field_of_study && `in ${edu.field_of_study}`}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Skills */}
-      {profile.skills && profile.skills.length > 0 && (
-        <div>
-          <h5 className="font-semibold text-gray-800 mb-2">Skills ({profile.skills.length})</h5>
-          <div className="flex flex-wrap gap-2">
-            {profile.skills.map((skill, idx) => (
-              <span
-                key={idx}
-                className="px-2 py-1 bg-gray-100 text-gray-700 text-sm rounded"
-              >
-                {skill}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Full job view for modal
-function JobFullView({ job }: { job: JobPosting }) {
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h4 className="text-xl font-bold text-gray-900">{job.title}</h4>
-        <p className="text-gray-600 mt-1">at {job.company_name}</p>
-        {job.location && (
-          <p className="text-sm text-gray-500">{job.location}</p>
-        )}
-        {job.work_type && (
-          <span className="inline-block mt-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
-            {job.work_type}
-          </span>
-        )}
-      </div>
-
-      {/* Description */}
-      {job.description && (
-        <div>
-          <h5 className="font-semibold text-gray-800 mb-2">Description</h5>
-          <p className="text-gray-600 text-sm whitespace-pre-wrap">{job.description}</p>
-        </div>
-      )}
-
-      {/* Requirements */}
-      {job.requirements && job.requirements.length > 0 && (
-        <div>
-          <h5 className="font-semibold text-gray-800 mb-2">Requirements</h5>
-          <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
-            {job.requirements.map((req, idx) => (
-              <li key={idx}>{req}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Responsibilities */}
-      {job.responsibilities && job.responsibilities.length > 0 && (
-        <div>
-          <h5 className="font-semibold text-gray-800 mb-2">Responsibilities</h5>
-          <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
-            {job.responsibilities.map((resp, idx) => (
-              <li key={idx}>{resp}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Tech Stack */}
-      {job.tech_stack && job.tech_stack.length > 0 && (
-        <div>
-          <h5 className="font-semibold text-gray-800 mb-2">Tech Stack</h5>
-          <div className="flex flex-wrap gap-2">
-            {job.tech_stack.map((tech, idx) => (
-              <span
-                key={idx}
-                className="px-2 py-1 bg-blue-100 text-blue-700 text-sm rounded"
-              >
-                {tech}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Benefits */}
-      {job.benefits && job.benefits.length > 0 && (
-        <div>
-          <h5 className="font-semibold text-gray-800 mb-2">Benefits</h5>
-          <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
-            {job.benefits.map((ben, idx) => (
-              <li key={idx}>{ben}</li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
@@ -380,15 +449,15 @@ export default function ResearchStep({
   onUpdateJobMarkdown,
 }: ResearchStepProps) {
   // Modal state
-  const [profileModalOpen, setProfileModalOpen] = useState(false);
-  const [jobModalOpen, setJobModalOpen] = useState(false);
+  const [researchModalOpen, setResearchModalOpen] = useState(false);
   // New markdown editor modal state
   const [profileMarkdownModalOpen, setProfileMarkdownModalOpen] = useState(false);
   const [jobMarkdownModalOpen, setJobMarkdownModalOpen] = useState(false);
 
   // Determine step statuses based on what data is available
-  const profileFetched = !!userProfile;
-  const jobFetched = !!jobPosting;
+  // Check for actual content, not just truthy objects (empty {} is truthy but useless)
+  const profileFetched = !!(userProfile?.name || profileMarkdown);
+  const jobFetched = !!(jobPosting?.title || jobPosting?.company_name || jobMarkdown);
   const researchDone = !!research;
   const analysisDone = !!gapAnalysis;
 
@@ -527,17 +596,6 @@ export default function ResearchStep({
                     </svg>
                   </button>
                 )}
-                {userProfile && !profileMarkdown && (
-                  <button
-                    onClick={() => setProfileModalOpen(true)}
-                    className="text-sm text-gray-500 hover:text-gray-700 font-medium flex items-center"
-                  >
-                    Show JSON
-                    <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -549,7 +607,8 @@ export default function ResearchStep({
                   <p className="text-sm text-gray-600">{userProfile.headline}</p>
                 )}
               </div>
-              {userProfile.experience && userProfile.experience.length > 0 && (
+              {/* Show structured experience if available */}
+              {userProfile.experience && userProfile.experience.length > 0 ? (
                 <div>
                   <p className="text-sm font-medium text-gray-700">
                     Experience ({userProfile.experience.length} roles)
@@ -572,7 +631,27 @@ export default function ResearchStep({
                     )}
                   </ul>
                 </div>
-              )}
+              ) : profileMarkdown ? (
+                /* Show markdown preview when no structured experience */
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-1">Profile Content</p>
+                  <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg max-h-32 overflow-hidden relative">
+                    <div className="whitespace-pre-wrap">
+                      {profileMarkdown.slice(0, 400)}
+                      {profileMarkdown.length > 400 && "..."}
+                    </div>
+                    {profileMarkdown.length > 400 && (
+                      <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-50 to-transparent" />
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setProfileMarkdownModalOpen(true)}
+                    className="text-xs text-blue-600 hover:text-blue-800 mt-2 font-medium"
+                  >
+                    View full profile →
+                  </button>
+                </div>
+              ) : null}
               {userProfile.skills && userProfile.skills.length > 0 && (
                 <div>
                   <p className="text-sm font-medium text-gray-700">
@@ -610,30 +689,37 @@ export default function ResearchStep({
               </svg>
               Target Job
             </h3>
-            {jobPosting && (
-              <button
-                onClick={() => setJobModalOpen(true)}
-                className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
-              >
-                Show More
-                <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-              </button>
+            {(jobPosting || jobMarkdown) && (
+              <div className="flex items-center gap-2">
+                {jobMarkdown && (
+                  <button
+                    onClick={() => setJobMarkdownModalOpen(true)}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
+                  >
+                    View/Edit Job
+                    <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             )}
           </div>
           {jobPosting ? (
             <div className="space-y-3">
               <div>
                 <span className="font-medium">{jobPosting.title}</span>
-                <p className="text-sm text-gray-600">
-                  at {jobPosting.company_name}
-                </p>
+                {jobPosting.company_name && (
+                  <p className="text-sm text-gray-600">
+                    at {jobPosting.company_name}
+                  </p>
+                )}
                 {jobPosting.location && (
                   <p className="text-sm text-gray-500">{jobPosting.location}</p>
                 )}
               </div>
-              {jobPosting.tech_stack && jobPosting.tech_stack.length > 0 && (
+              {/* Show structured data if available */}
+              {jobPosting.tech_stack && jobPosting.tech_stack.length > 0 ? (
                 <div>
                   <p className="text-sm font-medium text-gray-700">Tech Stack</p>
                   <div className="flex flex-wrap gap-1 mt-1">
@@ -652,8 +738,8 @@ export default function ResearchStep({
                     )}
                   </div>
                 </div>
-              )}
-              {jobPosting.requirements && jobPosting.requirements.length > 0 && (
+              ) : null}
+              {jobPosting.requirements && jobPosting.requirements.length > 0 ? (
                 <div>
                   <p className="text-sm font-medium text-gray-700">
                     Key Requirements
@@ -669,7 +755,27 @@ export default function ResearchStep({
                     )}
                   </ul>
                 </div>
-              )}
+              ) : jobMarkdown ? (
+                /* Show markdown preview when no structured requirements */
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-1">Job Description</p>
+                  <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg max-h-32 overflow-hidden relative">
+                    <div className="whitespace-pre-wrap">
+                      {jobMarkdown.slice(0, 400)}
+                      {jobMarkdown.length > 400 && "..."}
+                    </div>
+                    {jobMarkdown.length > 400 && (
+                      <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-50 to-transparent" />
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setJobMarkdownModalOpen(true)}
+                    className="text-xs text-blue-600 hover:text-blue-800 mt-2 font-medium"
+                  >
+                    View full job posting →
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="text-gray-500 text-sm">Loading job details...</div>
@@ -677,25 +783,7 @@ export default function ResearchStep({
         </div>
       </div>
 
-      {/* Modals */}
-      <DataModal
-        isOpen={profileModalOpen}
-        onClose={() => setProfileModalOpen(false)}
-        title="Your Profile - Full Details"
-        data={userProfile}
-        type="profile"
-        onSave={onUpdateProfile ? (data) => onUpdateProfile(data as UserProfile) : undefined}
-      />
-      <DataModal
-        isOpen={jobModalOpen}
-        onClose={() => setJobModalOpen(false)}
-        title="Target Job - Full Details"
-        data={jobPosting}
-        type="job"
-        onSave={onUpdateJob ? (data) => onUpdateJob(data as JobPosting) : undefined}
-      />
-
-      {/* Markdown Editor Modals */}
+      {/* Markdown Display Modals */}
       <ProfileEditorModal
         isOpen={profileMarkdownModalOpen}
         onClose={() => setProfileMarkdownModalOpen(false)}
@@ -720,36 +808,319 @@ export default function ResearchStep({
       {/* Research Findings */}
       {research && (
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Research Insights
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm font-medium text-gray-700">
-                Company Culture
-              </p>
-              <p className="text-sm text-gray-600 mt-1">
-                {research.company_culture.slice(0, 200)}...
-              </p>
-            </div>
-            {research.company_values.length > 0 && (
-              <div>
-                <p className="text-sm font-medium text-gray-700">Values</p>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {research.company_values.map((value, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded"
-                    >
-                      {value}
-                    </span>
-                  ))}
-                </div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+              <svg className="w-5 h-5 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              Research Insights
+            </h3>
+            <button
+              onClick={() => setResearchModalOpen(true)}
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
+            >
+              Show More
+              <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </button>
+          </div>
+          <div className="space-y-4">
+            {/* Row 0: Company Overview - if available */}
+            {research.company_overview && (
+              <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
+                <p className="text-sm font-medium text-blue-800 mb-1">Company Overview</p>
+                <p className="text-sm text-blue-700">
+                  {research.company_overview}
+                </p>
               </div>
             )}
+
+            {/* Row 1: Culture + Values */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm font-medium text-gray-700">
+                  Company Culture
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  {research.company_culture || ''}
+                </p>
+              </div>
+              {research.company_values && research.company_values.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Company Values</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {research.company_values.map((value, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded"
+                      >
+                        {value}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Row 2: Tech Stack Preview - show all with usage */}
+            {research.tech_stack_details && research.tech_stack_details.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Tech Stack</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {research.tech_stack_details.slice(0, 8).map((tech, idx) => (
+                    <div
+                      key={idx}
+                      className={`px-3 py-2 text-xs rounded-lg ${
+                        tech.importance === 'high' ? 'bg-red-50 border border-red-200' :
+                        tech.importance === 'medium' ? 'bg-yellow-50 border border-yellow-200' :
+                        'bg-gray-50 border border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className={`font-medium ${
+                          tech.importance === 'high' ? 'text-red-700' :
+                          tech.importance === 'medium' ? 'text-yellow-700' :
+                          'text-gray-700'
+                        }`}>{tech.technology}</span>
+                        {tech.importance && (
+                          <span className={`px-1.5 py-0.5 text-[10px] rounded ${
+                            tech.importance === 'high' ? 'bg-red-200 text-red-700' :
+                            tech.importance === 'medium' ? 'bg-yellow-200 text-yellow-700' :
+                            'bg-gray-200 text-gray-600'
+                          }`}>{tech.importance}</span>
+                        )}
+                      </div>
+                      {tech.usage && (
+                        <p className="text-gray-500 mt-1 line-clamp-2">{tech.usage}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {research.tech_stack_details.length > 8 && (
+                  <button
+                    onClick={() => setResearchModalOpen(true)}
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    +{research.tech_stack_details.length - 8} more technologies
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Row 3: Similar Profiles - enhanced with current company and skills */}
+            {research.similar_profiles && research.similar_profiles.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Similar Successful Profiles</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {research.similar_profiles.slice(0, 4).map((profile, idx) => (
+                    <div key={idx} className="text-sm border-l-3 border-blue-300 pl-3 bg-blue-50/50 py-2 pr-2 rounded-r">
+                      <div className="flex items-start justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-800 truncate">{profile.name}</p>
+                          <p className="text-gray-600 text-xs truncate">{profile.headline}</p>
+                          {profile.current_company && (
+                            <p className="text-gray-500 text-xs mt-0.5">@ {profile.current_company}</p>
+                          )}
+                        </div>
+                        {profile.url && (
+                          <a
+                            href={profile.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 ml-2 flex-shrink-0"
+                            title="View Profile"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        )}
+                      </div>
+                      {profile.key_skills && profile.key_skills.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {profile.key_skills.slice(0, 4).map((skill, i) => (
+                            <span key={i} className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded">
+                              {skill}
+                            </span>
+                          ))}
+                          {profile.key_skills.length > 4 && (
+                            <span className="text-[10px] text-gray-400">+{profile.key_skills.length - 4}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {research.similar_profiles.length > 4 && (
+                  <button
+                    onClick={() => setResearchModalOpen(true)}
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    +{research.similar_profiles.length - 4} more profiles
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Row 4: Industry Trends */}
+            {research.industry_trends && research.industry_trends.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Industry Trends</p>
+                <ul className="text-xs text-gray-600 space-y-1.5 bg-purple-50/50 p-3 rounded-lg">
+                  {research.industry_trends.slice(0, 5).map((trend, idx) => (
+                    <li key={idx} className="flex items-start">
+                      <span className="text-purple-500 mr-2 mt-0.5">→</span>
+                      <span>{trend}</span>
+                    </li>
+                  ))}
+                  {research.industry_trends.length > 5 && (
+                    <li>
+                      <button
+                        onClick={() => setResearchModalOpen(true)}
+                        className="text-blue-600 hover:text-blue-800 ml-4"
+                      >
+                        +{research.industry_trends.length - 5} more trends
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {/* Row 5: Hiring Patterns + Company News */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {research.hiring_patterns && (
+                <div className="bg-amber-50/50 p-3 rounded-lg border border-amber-100">
+                  <p className="text-sm font-medium text-amber-800 mb-1 flex items-center">
+                    <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Hiring Patterns
+                  </p>
+                  <p className="text-xs text-amber-700">
+                    {research.hiring_patterns}
+                  </p>
+                </div>
+              )}
+              {research.company_news && research.company_news.length > 0 && (
+                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <p className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+                    <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                    </svg>
+                    Recent News
+                  </p>
+                  <ul className="text-xs text-gray-600 space-y-1.5">
+                    {research.company_news.slice(0, 4).map((news, idx) => (
+                      <li key={idx} className="flex items-start">
+                        <span className="text-gray-400 mr-1.5">•</span>
+                        <span className="line-clamp-2">{news}</span>
+                      </li>
+                    ))}
+                    {research.company_news.length > 4 && (
+                      <li>
+                        <button
+                          onClick={() => setResearchModalOpen(true)}
+                          className="text-blue-600 hover:text-blue-800 ml-3"
+                        >
+                          +{research.company_news.length - 4} more news items
+                        </button>
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Row 6: Hiring Criteria + Ideal Profile */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Hiring Criteria Preview */}
+              {research.hiring_criteria && (
+                <div className="bg-amber-50/50 p-3 rounded-lg border border-amber-200">
+                  <p className="text-sm font-medium text-amber-800 mb-2 flex items-center">
+                    <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Hiring Criteria
+                  </p>
+                  {research.hiring_criteria.must_haves && research.hiring_criteria.must_haves.length > 0 && (
+                    <div className="mb-2">
+                      <p className="text-xs font-medium text-red-700">Must-Haves:</p>
+                      <ul className="text-xs text-gray-600 space-y-0.5">
+                        {research.hiring_criteria.must_haves.slice(0, 3).map((item, idx) => (
+                          <li key={idx} className="flex items-start">
+                            <span className="text-red-400 mr-1">•</span>
+                            <span className="line-clamp-1">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {((research.hiring_criteria.keywords && research.hiring_criteria.keywords.length > 0) ||
+                    (research.hiring_criteria.ats_keywords && research.hiring_criteria.ats_keywords.length > 0)) && (
+                    <div className="flex flex-wrap gap-1">
+                      {[...(research.hiring_criteria.keywords || []), ...(research.hiring_criteria.ats_keywords || [])].slice(0, 6).map((kw, idx) => (
+                        <span key={idx} className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[10px] rounded">
+                          {kw}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setResearchModalOpen(true)}
+                    className="text-xs text-blue-600 hover:text-blue-800 mt-2"
+                  >
+                    View full criteria →
+                  </button>
+                </div>
+              )}
+
+              {/* Ideal Profile Preview */}
+              {research.ideal_profile && (
+                <div className="bg-green-50/50 p-3 rounded-lg border border-green-200">
+                  <p className="text-sm font-medium text-green-800 mb-2 flex items-center">
+                    <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Ideal Profile
+                  </p>
+                  {research.ideal_profile.headline && (
+                    <div className="mb-2">
+                      <p className="text-xs font-medium text-green-700">Recommended Headline:</p>
+                      <p className="text-xs text-gray-700 bg-white rounded px-2 py-1 mt-0.5 border border-green-100 line-clamp-2">
+                        {research.ideal_profile.headline}
+                      </p>
+                    </div>
+                  )}
+                  {research.ideal_profile.skills_priority && research.ideal_profile.skills_priority.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {research.ideal_profile.skills_priority.slice(0, 5).map((skill, idx) => (
+                        <span key={idx} className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] rounded">
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setResearchModalOpen(true)}
+                    className="text-xs text-blue-600 hover:text-blue-800 mt-2"
+                  >
+                    View full profile →
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
+
+      {/* Research Modal */}
+      <ResearchModal
+        isOpen={researchModalOpen}
+        onClose={() => setResearchModalOpen(false)}
+        research={research}
+      />
 
       {/* Gap Analysis */}
       {gapAnalysis && (

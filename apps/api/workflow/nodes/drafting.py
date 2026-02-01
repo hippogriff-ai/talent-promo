@@ -17,6 +17,7 @@ from workflow.state import (
     DraftVersion,
     DraftValidationResult,
 )
+from guardrails import validate_output
 
 logger = logging.getLogger(__name__)
 
@@ -51,34 +52,35 @@ def get_llm(temperature: float = 0.4):
     )
 
 
-RESUME_DRAFTING_PROMPT = """You are an expert resume writer who creates ATS-friendly, compelling resumes.
+RESUME_DRAFTING_PROMPT = """You are an elite resume writer specializing in ATS-optimized, high-impact resumes.
 
-Your task is to create a tailored resume that:
-1. Is optimized for Applicant Tracking Systems (ATS) with relevant keywords
-2. Sounds natural and human - NOT robotic or obviously AI-generated
-3. Quantifies achievements with metrics wherever possible
-4. Highlights transferable skills and addresses gaps strategically
-5. Uses strong action verbs and concise bullet points
-6. Is tailored specifically to the target job
-7. Follows the user's writing style preferences (if provided)
+CORE PRINCIPLES:
+1. CONCISE: Every bullet under 18 words. Professional summary under 40 words (2-3 sentences).
+2. IMPACTFUL: Every bullet = Action Verb + Achievement + Metric + Tech/Scale
+3. TAILORED: Address ALL job requirements. Integrate keywords naturally.
+4. POLISHED: Zero filler words. Zero passive voice. Professional but not stiff.
 
-WRITING GUIDELINES:
-- Use first-person implied (no "I" but write as if candidate is speaking) unless user prefers first person
-- Each bullet should start with a strong action verb
-- Quantify with numbers: "increased by 40%", "managed team of 5", "reduced time by 2 hours"
-- Keep bullets to 1-2 lines each
-- Summary should be 2-4 sentences, impactful and specific
-- Include ALL relevant keywords from the job posting naturally
-- Don't use buzzwords like "synergy", "leverage", "utilize" excessively
-- Vary sentence structure to sound natural
+BULLET EXAMPLES (follow this style):
+✓ "Led microservices migration using Kubernetes, cutting deployment time 75%"
+✓ "Built React analytics dashboard serving 50K daily users"
+✓ "Drove $2M ARR growth launching enterprise SSO feature"
+✗ "Responsible for various initiatives" (vague)
+✗ "Successfully implemented improvements" (wordy, no metrics)
 
-USER STYLE PREFERENCES (apply these if provided):
+SUMMARY FORMULA: [Role] with [X years] in [expertise]. [Key achievement + metric]. [Value for THIS role].
+
+SENIORITY POSITIONING:
+- Senior/Director roles: Lead with strategic impact, team size, business outcomes
+- Mid-level roles: Balance individual contributions with collaboration
+- Entry roles: Emphasize learning velocity and concrete project results
+
+GAP HANDLING: Reframe adjacent experience to match requirements. Never fabricate.
+
+USER STYLE PREFERENCES (apply if provided):
 - Tone: formal/conversational/confident/humble
 - Structure: bullets/paragraphs/mixed
-- Sentence length: concise/detailed/mixed
 - First person: whether to use "I" statements
 - Quantification: heavy_metrics/qualitative/balanced
-- Achievement focus: whether to emphasize accomplishments over responsibilities
 
 OUTPUT FORMAT (HTML for Tiptap editor):
 
@@ -86,25 +88,33 @@ OUTPUT FORMAT (HTML for Tiptap editor):
 <p>[Contact info: email | phone | location | LinkedIn]</p>
 
 <h2>Professional Summary</h2>
-<p>[2-4 sentence summary tailored to this specific role]</p>
+<p>[2-3 sentences: (1) Role + years of experience + key expertise, (2) Standout achievement with metric, (3) What you bring to THIS specific role]</p>
 
 <h2>Experience</h2>
 <h3>[Job Title] | [Company] | [Dates]</h3>
 <ul>
-<li>[Achievement bullet with metrics]</li>
-<li>[Achievement bullet with metrics]</li>
+<li>[Action verb + achievement + metric + tools/scale, e.g., "Led migration to microservices using Kubernetes, reducing deployment time 75%"]</li>
+<li>[Action verb + achievement + metric + tools/scale]</li>
 </ul>
 
 <h2>Education</h2>
 <p><strong>[Degree]</strong> - [Institution], [Year]</p>
 
 <h2>Skills</h2>
-<p>[Comma-separated skills, prioritized for ATS]</p>
+<p>[Comma-separated skills, prioritized by relevance to target job]</p>
 
 <h2>Certifications</h2>
 <ul>
 <li>[Certification name]</li>
 </ul>
+
+BEFORE OUTPUTTING, verify:
+1. Professional summary is 2-3 sentences, under 40 words
+2. Every bullet starts with a strong action verb (Led, Built, Drove, Increased, etc.)
+3. Every bullet has a quantified metric (%, $, #, time saved, etc.)
+4. No bullet exceeds 20 words
+5. All job requirements from the posting are addressed
+6. Keywords are naturally integrated, not stuffed
 
 Make sure the HTML is clean and well-formatted for a rich text editor."""
 
@@ -155,15 +165,25 @@ ACTION_VERBS = {
 async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
     """Draft an ATS-friendly resume based on all gathered information.
 
-    Uses:
-    - Original user profile
-    - Job posting requirements
+    Uses raw text directly for better LLM context:
+    - Raw profile/resume text (preferred)
+    - Raw job posting text (preferred)
     - Gap analysis recommendations
     - Q&A interview responses
     - Discovered experiences from discovery stage
     """
     logger.info("Starting resume drafting node")
 
+    # Prefer raw text fields, fall back to structured data
+    profile_text = state.get("profile_text") or state.get("profile_markdown") or ""
+    job_text = state.get("job_text") or state.get("job_markdown") or ""
+
+    # Get metadata for display/filenames
+    profile_name = state.get("profile_name") or state.get("user_profile", {}).get("name", "Candidate")
+    job_title = state.get("job_title") or state.get("job_posting", {}).get("title", "Position")
+    job_company = state.get("job_company") or state.get("job_posting", {}).get("company_name", "Company")
+
+    # Fall back to structured data for contact info if needed
     user_profile = state.get("user_profile", {})
     job_posting = state.get("job_posting", {})
     gap_analysis = state.get("gap_analysis", {})
@@ -172,7 +192,11 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
     discovered_experiences = state.get("discovered_experiences", [])
     user_preferences = state.get("user_preferences", {})
 
-    if not user_profile or not job_posting:
+    # Check we have either raw text or structured data
+    has_profile = profile_text or user_profile
+    has_job = job_text or job_posting
+
+    if not has_profile or not has_job:
         return {
             "errors": [*state.get("errors", []), "Missing profile or job data for drafting"],
             "current_step": "error",
@@ -181,9 +205,20 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
     try:
         llm = get_llm()
 
-        # Build comprehensive drafting context
-        context = _build_drafting_context(
-            user_profile, job_posting, gap_analysis, qa_history, research, discovered_experiences, user_preferences
+        # Build comprehensive drafting context using raw text
+        context = _build_drafting_context_from_raw(
+            profile_text=profile_text,
+            job_text=job_text,
+            profile_name=profile_name,
+            job_title=job_title,
+            job_company=job_company,
+            user_profile=user_profile,
+            job_posting=job_posting,
+            gap_analysis=gap_analysis,
+            qa_history=qa_history,
+            research=research,
+            discovered_experiences=discovered_experiences,
+            user_preferences=user_preferences,
         )
 
         messages = [
@@ -196,6 +231,15 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
         resume_html = _extract_content_from_code_block(response.content, "html")
 
         logger.info(f"Resume draft generated: {len(resume_html)} characters")
+
+        # Validate and sanitize LLM output for safety
+        resume_html, validation_results = validate_output(
+            resume_html,
+            source_profile=profile_text,
+            thread_id=state.get("thread_id"),
+        )
+        if validation_results["sanitized"]:
+            logger.warning("Resume HTML was sanitized to remove problematic patterns")
 
         # Create initial version
         initial_version = DraftVersion(
@@ -212,7 +256,7 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
 
         # Also create structured data for potential JSON editing
         resume_structured = {
-            "name": user_profile.get("name", ""),
+            "name": profile_name,
             "contact": {
                 "email": user_profile.get("email", ""),
                 "phone": user_profile.get("phone", ""),
@@ -220,8 +264,8 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
                 "linkedin": user_profile.get("linkedin_url", ""),
             },
             "target_job": {
-                "title": job_posting.get("title", ""),
-                "company": job_posting.get("company_name", ""),
+                "title": job_title,
+                "company": job_company,
             },
             "keywords_used": gap_analysis.get("keywords_to_include", []),
         }
@@ -234,6 +278,7 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
             "draft_change_log": [],
             "draft_current_version": "1.0",
             "draft_approved": False,
+            "draft_validation": validation_results,  # Include bias/safety warnings
             "current_step": "editor",  # Set to editor so frontend shows ResumeEditor
             "sub_step": "suggestions_ready",
             "updated_at": datetime.now().isoformat(),
@@ -247,6 +292,98 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
         }
 
 
+def _build_drafting_context_from_raw(
+    profile_text: str,
+    job_text: str,
+    profile_name: str,
+    job_title: str,
+    job_company: str,
+    user_profile: dict,
+    job_posting: dict,
+    gap_analysis: dict,
+    qa_history: list,
+    research: dict,
+    discovered_experiences: list,
+    user_preferences: dict | None = None,
+) -> str:
+    """Build comprehensive context for resume drafting using raw text.
+
+    Uses raw text directly for better LLM understanding, falling back to
+    structured data only for contact info.
+    """
+    # Format user preferences section
+    prefs_section = _format_user_preferences(user_preferences)
+
+    # Get contact info from structured data (regex-extracted or user_profile)
+    email = user_profile.get('email', '')
+    phone = user_profile.get('phone', '')
+    location = user_profile.get('location', '')
+    linkedin = user_profile.get('linkedin_url', '')
+
+    # Use raw text for profile and job - LLMs work better with natural text
+    profile_section = profile_text[:6000] if profile_text else _format_experience_for_draft(user_profile.get('experience', []))
+    job_section = job_text[:4000] if job_text else job_posting.get('description', '')[:2000]
+
+    context = f"""
+CANDIDATE INFORMATION:
+Name: {profile_name}
+Email: {email}
+Phone: {phone}
+Location: {location}
+LinkedIn: {linkedin}
+
+---
+
+CANDIDATE'S FULL RESUME/PROFILE (use this as the primary source):
+{profile_section}
+
+---
+
+TARGET JOB:
+Title: {job_title}
+Company: {job_company}
+
+FULL JOB POSTING (use this as the primary source):
+{job_section}
+
+---
+
+GAP ANALYSIS RECOMMENDATIONS:
+
+Strengths to Emphasize:
+{chr(10).join('- ' + s for s in gap_analysis.get('strengths', []))}
+
+Areas to Address:
+{chr(10).join('- ' + g for g in gap_analysis.get('gaps', []))}
+
+What to Highlight:
+{chr(10).join('- ' + e for e in gap_analysis.get('recommended_emphasis', []))}
+
+Keywords to Include: {', '.join(gap_analysis.get('keywords_to_include', []))}
+
+---
+
+ADDITIONAL INFORMATION FROM INTERVIEW:
+{_format_qa_for_draft(qa_history)}
+
+---
+
+DISCOVERED EXPERIENCES (from discovery conversation):
+{_format_discovered_experiences(discovered_experiences)}
+
+---
+
+COMPANY INSIGHTS:
+Culture: {research.get('company_culture', 'N/A')[:500] if research else 'N/A'}
+Values: {', '.join(research.get('company_values', [])) if research else 'N/A'}
+
+---
+
+{prefs_section}
+"""
+    return context
+
+
 def _build_drafting_context(
     user_profile: dict,
     job_posting: dict,
@@ -256,7 +393,7 @@ def _build_drafting_context(
     discovered_experiences: list,
     user_preferences: dict | None = None,
 ) -> str:
-    """Build comprehensive context for resume drafting."""
+    """Build comprehensive context for resume drafting (legacy structured version)."""
     # Format user preferences section
     prefs_section = _format_user_preferences(user_preferences)
 

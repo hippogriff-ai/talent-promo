@@ -37,6 +37,7 @@ def get_llm():
         model=settings.anthropic_model,
         api_key=settings.anthropic_api_key,
         temperature=0.3,
+        max_tokens=4096,
     )
 
 
@@ -50,8 +51,8 @@ Output your analysis in JSON format:
 
 {
     "research": {
-        "company_overview": "Brief overview of the company",
-        "company_culture": "Description of company culture based on research",
+        "company_overview": "Detailed overview of the company - mission, size, industry position, products (3-5 sentences minimum)",
+        "company_culture": "Comprehensive description of company culture - work environment, team dynamics, decision-making style, communication norms, growth opportunities (3-5 sentences minimum)",
         "company_values": ["Value 1", "Value 2"],
         "tech_stack_details": [
             {"technology": "Tech name", "usage": "How it's used", "importance": "critical/important/nice-to-have"}
@@ -64,7 +65,7 @@ Output your analysis in JSON format:
             }
         ],
         "company_news": ["Recent news item 1", "Recent news item 2"],
-        "hiring_patterns": "Insights about what the company looks for in candidates",
+        "hiring_patterns": "Detailed insights about what the company looks for in candidates - interview process, team fit, technical expectations (3-5 sentences minimum)",
         "hiring_criteria": {
             "must_haves": ["Essential skill/qualification 1"],
             "preferred": ["Nice-to-have qualification 1"],
@@ -100,20 +101,25 @@ async def research_node(state: ResumeState) -> dict[str, Any]:
     """
     logger.info("Starting optimized research node (parallel EXA + combined analysis)")
 
-    job_posting = state.get("job_posting")
-    user_profile = state.get("user_profile")
+    job_posting = state.get("job_posting") or {}
+    user_profile = state.get("user_profile") or {}
     progress = list(state.get("progress_messages", []))
 
-    if not job_posting:
+    # Get raw text fields (set during ingest) - these contain the actual content
+    profile_text = state.get("profile_text") or state.get("profile_markdown") or ""
+    job_text = state.get("job_text") or state.get("job_markdown") or ""
+
+    # Get metadata (extracted via regex during ingest)
+    company_name = state.get("job_company") or job_posting.get("company_name") or ""
+    job_title = state.get("job_title") or job_posting.get("title") or ""
+    tech_stack = job_posting.get("tech_stack") or []
+
+    if not job_text and not job_posting:
         return {
             "errors": [*state.get("errors", []), "No job posting data available for research"],
             "current_step": "error",
             "progress_messages": progress,
         }
-
-    company_name = job_posting.get("company_name") or ""
-    job_title = job_posting.get("title") or ""
-    tech_stack = job_posting.get("tech_stack") or []
 
     try:
         # Build search queries
@@ -123,7 +129,7 @@ async def research_node(state: ResumeState) -> dict[str, Any]:
         else:
             tech_query = f"{company_name} engineering technology stack blog"
         similar_query = f"site:linkedin.com/in {job_title} {company_name}"
-        news_query = f"{company_name} company news funding growth hiring"
+        news_query = f'"{company_name}" recent news announcements 2024 2025'
 
         # ============================================================
         # PHASE 1: Run all 4 EXA searches in parallel
@@ -177,12 +183,19 @@ async def research_node(state: ResumeState) -> dict[str, Any]:
             return_exceptions=True
         )
 
-        # Process results safely
-        def safe_get_results(result, index):
+        # Process results safely and track failures
+        failed_searches = []
+
+        def safe_get_results(result, search_name):
             if isinstance(result, Exception):
-                logger.warning(f"Search {index} failed: {result}")
+                failed_searches.append((search_name, str(result)))
+                logger.warning(f"Search '{search_name}' failed: {result}")
                 return []
-            return result.get("results", []) if result.get("success") else []
+            if not result.get("success"):
+                failed_searches.append((search_name, result.get("error", "Unknown error")))
+                logger.warning(f"Search '{search_name}' returned error: {result.get('error')}")
+                return []
+            return result.get("results", [])
 
         research_results = {
             "culture": safe_get_results(search_results[0], "culture"),
@@ -190,6 +203,16 @@ async def research_node(state: ResumeState) -> dict[str, Any]:
             "similar_profiles": safe_get_results(search_results[2], "similar"),
             "news": safe_get_results(search_results[3], "news"),
         }
+
+        # Check if too many searches failed (3 or more = critical failure)
+        if len(failed_searches) >= 3:
+            error_msg = f"Research failed: {len(failed_searches)}/4 searches failed - {failed_searches}"
+            logger.error(error_msg)
+            return {
+                "errors": [*errors, error_msg],
+                "current_step": "error",
+                "progress_messages": progress,
+            }
 
         # Add results summary
         progress = _add_progress(progress, "research", "Search results collected",
@@ -205,23 +228,11 @@ async def research_node(state: ResumeState) -> dict[str, Any]:
                                 "Synthesizing research + identifying gaps and opportunities")
         llm = get_llm()
 
-        # Extract job posting details (use 'or' to handle None values)
-        job_requirements = job_posting.get("requirements") or []
-        job_preferred = job_posting.get("preferred_qualifications") or []
-        job_responsibilities = job_posting.get("responsibilities") or []
-        job_description = job_posting.get("description") or ""
-
-        # Build combined context
+        # Build combined context using raw text (set during ingest)
+        # This is much more reliable than structured extraction which may return empty arrays
         synthesis_context = f"""
 CANDIDATE PROFILE:
-Name: {user_profile.get('name', 'Unknown') if user_profile else 'Unknown'}
-Headline: {user_profile.get('headline', 'N/A') if user_profile else 'N/A'}
-Summary: {user_profile.get('summary', 'N/A') if user_profile else 'N/A'}
-
-Experience:
-{_format_experience(user_profile.get('experience', []) if user_profile else [])}
-
-Skills: {', '.join((user_profile.get('skills') or []) if user_profile else [])}
+{profile_text[:3000] if profile_text else "No profile text available"}
 
 ---
 
@@ -229,18 +240,7 @@ TARGET JOB:
 Company: {company_name}
 Role: {job_title}
 
-Description: {job_description[:1000]}
-
-Requirements:
-{chr(10).join(f'- {req}' for req in job_requirements)}
-
-Preferred Qualifications:
-{chr(10).join(f'- {pref}' for pref in job_preferred)}
-
-Responsibilities:
-{chr(10).join(f'- {resp}' for resp in job_responsibilities)}
-
-Tech Stack: {', '.join(tech_stack)}
+{job_text[:3000] if job_text else "No job description available"}
 
 ---
 
@@ -280,7 +280,7 @@ NEWS:
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON: {e}")
-            # Create fallback data
+            # Create fallback data (minimal since we use raw text now)
             research_data = {
                 "company_overview": f"Research gathered for {company_name}",
                 "company_culture": "See raw research results",
@@ -290,8 +290,8 @@ NEWS:
                 "company_news": [],
                 "hiring_patterns": "",
                 "hiring_criteria": {
-                    "must_haves": job_requirements[:5] if job_requirements else [],
-                    "preferred": job_preferred[:5] if job_preferred else [],
+                    "must_haves": [],
+                    "preferred": [],
                     "keywords": tech_stack[:5] if tech_stack else [],
                     "ats_keywords": [],
                 },
@@ -368,7 +368,7 @@ def _format_search_results(results: list[dict]) -> str:
     for r in results[:3]:  # Limit to 3 results per category
         title = r.get("title", "Untitled")
         summary = r.get("summary", "")
-        text = r.get("text", "")[:300] if r.get("text") else ""
+        text = r.get("text", "")[:1500] if r.get("text") else ""
 
         entry = f"- {title}"
         if summary:

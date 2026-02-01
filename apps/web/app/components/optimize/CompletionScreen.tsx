@@ -14,6 +14,7 @@ interface DownloadLink {
 interface CompletionScreenProps {
   downloads: DownloadLink[];
   onStartNew: () => void;
+  onGoBackToEdit?: () => void;
   atsScore?: number;
   atsReport?: ATSReport | null;
   linkedinOptimized?: boolean;
@@ -33,6 +34,7 @@ const COMPLETED_RESUMES_KEY = "resume_agent:completed_resumes";
 export default function CompletionScreen({
   downloads,
   onStartNew,
+  onGoBackToEdit,
   atsScore,
   atsReport,
   linkedinOptimized,
@@ -108,6 +110,26 @@ export default function CompletionScreen({
           Your tailored resume is ready for download
         </p>
       </div>
+
+      {/* Go Back to Edit - Prominent placement right after header */}
+      {onGoBackToEdit && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-8 flex items-center justify-between">
+          <div>
+            <p className="font-medium text-amber-900">Need to make changes?</p>
+            <p className="text-sm text-amber-700">Go back to edit contact info, content, or formatting</p>
+          </div>
+          <button
+            data-testid="go-back-to-edit"
+            onClick={onGoBackToEdit}
+            className="px-4 py-2 bg-amber-600 text-white font-medium rounded-lg hover:bg-amber-700 transition-colors inline-flex items-center shrink-0 ml-4"
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+            </svg>
+            Edit Resume
+          </button>
+        </div>
+      )}
 
       {/* Stats Summary - Clickable to expand details */}
       {(atsScore !== undefined || linkedinOptimized) && (
@@ -189,9 +211,48 @@ export default function CompletionScreen({
             </svg>
           </button>
           {showPreview && (
-            <div className="mt-4 bg-white border rounded-lg p-6 max-h-[500px] overflow-y-auto">
+            <div className="mt-4 bg-white border rounded-lg p-8 max-h-[600px] overflow-y-auto shadow-inner"
+              style={{ maxWidth: '8.5in', margin: '16px auto' }}
+            >
+              <style>{`
+                .resume-preview {
+                  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                  font-size: 11pt;
+                  line-height: 1.4;
+                  color: #333;
+                }
+                .resume-preview h1 {
+                  font-size: 18pt;
+                  text-align: center;
+                  margin-bottom: 5px;
+                  color: #000;
+                }
+                .resume-preview h2 {
+                  font-size: 13pt;
+                  border-bottom: 1px solid #333;
+                  padding-bottom: 3px;
+                  margin-top: 15px;
+                  margin-bottom: 8px;
+                  color: #000;
+                }
+                .resume-preview h3 {
+                  font-size: 11pt;
+                  margin-bottom: 3px;
+                  margin-top: 10px;
+                }
+                .resume-preview p {
+                  margin: 5px 0;
+                }
+                .resume-preview ul {
+                  margin: 5px 0;
+                  padding-left: 20px;
+                }
+                .resume-preview li {
+                  margin: 3px 0;
+                }
+              `}</style>
               <div
-                className="prose prose-sm max-w-none"
+                className="resume-preview"
                 dangerouslySetInnerHTML={{ __html: resumePreviewHtml }}
               />
             </div>
@@ -205,11 +266,17 @@ export default function CompletionScreen({
           <h2 className="font-medium text-gray-900">Download Your Resume</h2>
         </div>
         <div className="divide-y">
-          {downloads.map((download) => (
+          {downloads.map((download) => {
+            // Build filename from job/company or use default
+            const baseName = (jobTitle && companyName)
+              ? `${jobTitle.replace(/[^a-zA-Z0-9]/g, '_')}_${companyName.replace(/[^a-zA-Z0-9]/g, '_')}`
+              : 'resume_optimized';
+            const filename = `${baseName}.${download.format}`;
+            return (
             <a
               key={download.format}
               href={download.url}
-              download
+              download={filename}
               className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
             >
               <div className="flex items-center">
@@ -232,7 +299,8 @@ export default function CompletionScreen({
                 />
               </svg>
             </a>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -277,17 +345,19 @@ export default function CompletionScreen({
         </div>
       )}
 
-      {/* Start New */}
-      <div className="text-center">
-        <p className="text-gray-600 mb-4">
-          Ready to optimize for another job?
-        </p>
-        <button
-          onClick={onStartNew}
-          className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          Start New Application
-        </button>
+      {/* Actions */}
+      <div className="text-center space-y-4">
+        <div className="pt-2">
+          <p className="text-gray-600 mb-4">
+            Ready to optimize for another job?
+          </p>
+          <button
+            onClick={onStartNew}
+            className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Start New Application
+          </button>
+        </div>
       </div>
     </div>
     </>

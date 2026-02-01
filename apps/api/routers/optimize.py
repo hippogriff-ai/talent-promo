@@ -21,11 +21,13 @@ from pydantic import BaseModel, Field
 from langgraph.types import Command
 
 from workflow.graph import get_workflow, create_initial_state
+from workflow.nodes.analysis import analyze_node
 from workflow.nodes.editor import get_editor_suggestion, regenerate_section
 from workflow.nodes.export import export_resume
 from validators import validate_urls, validate_linkedin_url, validate_job_url
-from services.thread_metadata import get_metadata_service, ThreadMetadataService
+from services.thread_metadata import get_metadata_service
 from middleware.rate_limit import check_rate_limit
+from guardrails import validate_input, validate_output
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +109,7 @@ class WorkflowStateResponse(BaseModel):
     discovered_experiences: list[dict] = Field(default_factory=list)
     discovery_confirmed: bool = False
     discovery_exchanges: int = 0
+    discovery_agenda: Optional[dict] = None  # Structured agenda with topics
 
     # Data snapshots (optional, only included when requested)
     user_profile: Optional[dict] = None
@@ -160,9 +163,38 @@ from workflow.progress import (
     get_realtime_progress,
     clear_realtime_progress,
 )
+import asyncio
+from contextlib import asynccontextmanager
 
 
 _workflows: dict[str, dict] = {}
+_workflow_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_workflow_lock(thread_id: str) -> asyncio.Lock:
+    """Get or create a lock for a specific thread_id.
+
+    Prevents race conditions when multiple concurrent requests
+    try to update the same workflow's state.
+
+    Uses setdefault() for atomic check-and-create to avoid TOCTOU race.
+    """
+    return _workflow_locks.setdefault(thread_id, asyncio.Lock())
+
+
+@asynccontextmanager
+async def _workflow_data_lock(thread_id: str):
+    """Context manager for thread-safe workflow data access.
+
+    Usage:
+        async with _workflow_data_lock(thread_id):
+            data = _get_workflow_data(thread_id)
+            # modify data
+            _save_workflow_data(thread_id, data)
+    """
+    lock = _get_workflow_lock(thread_id)
+    async with lock:
+        yield
 
 
 def _get_workflow_data(thread_id: str) -> dict:
@@ -228,6 +260,35 @@ def _save_workflow_data(thread_id: str, data: dict):
     _workflows[thread_id] = data
 
 
+def _enrich_job_posting(state: dict) -> dict | None:
+    """Enrich job_posting with new fields from state.
+
+    After ingest simplification, company/title may be in separate state fields
+    (job_company, job_title) rather than inside job_posting. This merges them.
+
+    Returns None if no meaningful job data exists (to avoid frontend showing
+    empty "Job Details" checkmark with no content).
+    """
+    job_posting = state.get("job_posting") or {}
+    if not isinstance(job_posting, dict):
+        job_posting = {}
+
+    # Make a copy to avoid mutating state
+    enriched = dict(job_posting)
+
+    # Merge new fields if job_posting doesn't have them
+    if not enriched.get("company_name") and state.get("job_company"):
+        enriched["company_name"] = state.get("job_company")
+    if not enriched.get("title") and state.get("job_title"):
+        enriched["title"] = state.get("job_title")
+
+    # Return None if no meaningful data (prevents truthy empty object bug)
+    if not enriched.get("title") and not enriched.get("company_name") and not enriched.get("description"):
+        return None
+
+    return enriched
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -256,9 +317,17 @@ async def start_workflow(
     # Check rate limit (3 requests per IP per day)
     allowed, remaining, reset_time = check_rate_limit(client_ip)
     if not allowed:
+        # Format reset time nicely
+        hours = reset_time // 3600
+        minutes = (reset_time % 3600) // 60
+        if hours > 0:
+            time_str = f"{hours}h {minutes}m" if minutes else f"{hours} hours"
+        else:
+            time_str = f"{minutes} minutes"
+
         raise HTTPException(
             status_code=429,
-            detail=f"Rate limit exceeded. Try again after {reset_time}.",
+            detail=f"Whoa there, speedster! You've used up your daily resume juice. Your creativity tank refills in {time_str}. Maybe grab a coffee? ☕",
             headers={"Retry-After": str(reset_time), "X-RateLimit-Remaining": "0"}
         )
 
@@ -275,6 +344,12 @@ async def start_workflow(
             status_code=400,
             detail="; ".join(errors)
         )
+
+    # Validate inputs for injection attacks and content safety
+    if request.resume_text:
+        validate_input(request.resume_text, ip_address=client_ip)
+    if request.job_text:
+        validate_input(request.job_text, ip_address=client_ip)
 
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
@@ -315,8 +390,8 @@ async def start_workflow(
 async def _run_workflow(thread_id: str):
     """Run the workflow asynchronously.
 
-    Uses async workflow methods with MemorySaver or async-compatible checkpointers.
-    For production persistence, use PostgresSaver which has async support.
+    Uses async workflow methods with MemorySaver.
+    All data is ephemeral and cleaned up after 2 hours (privacy by design).
     """
     # Set context variable so nodes can emit real-time progress
     token = current_thread_id.set(thread_id)
@@ -467,18 +542,19 @@ async def get_workflow_status(thread_id: str, include_data: bool = False):
         discovered_experiences=state.get("discovered_experiences", []),
         discovery_confirmed=state.get("discovery_confirmed", False),
         discovery_exchanges=state.get("discovery_exchanges", 0),
+        discovery_agenda=state.get("discovery_agenda"),  # Structured agenda with topics
     )
 
     # Include full data if requested
     if include_data:
         response.user_profile = state.get("user_profile")
-        response.job_posting = state.get("job_posting")
+        response.job_posting = _enrich_job_posting(state)  # Merge job_company/job_title
         # Raw markdown for display/editing
         response.profile_markdown = state.get("profile_markdown")
         response.job_markdown = state.get("job_markdown")
         response.research = state.get("research")
         response.gap_analysis = state.get("gap_analysis")
-        response.resume_html = state.get("resume_html")
+        response.resume_html = state.get("resume_final") or state.get("resume_html")
 
     return response
 
@@ -510,6 +586,9 @@ async def submit_answer(thread_id: str, answer: AnswerRequest):
     Uses Command(resume=value) to continue from the interrupt() call.
     The answer is passed directly to where interrupt() was called.
     """
+    # Validate user answer for injection attacks
+    validate_input(answer.text, thread_id=thread_id)
+
     workflow_data = _get_workflow_data(thread_id)
 
     if not workflow_data.get("interrupted"):
@@ -641,6 +720,112 @@ async def confirm_discovery(thread_id: str, request: DiscoveryConfirmRequest):
     return await get_workflow_status(thread_id)
 
 
+@router.post("/{thread_id}/discovery/skip", response_model=WorkflowStateResponse)
+async def skip_discovery(thread_id: str):
+    """Skip the discovery phase entirely and proceed directly to drafting.
+
+    Use this when users don't want to participate in the discovery conversation.
+    The resume will be generated based solely on their LinkedIn profile data.
+    """
+    workflow_data = _get_workflow_data(thread_id)
+    state = workflow_data.get("state", {})
+
+    # Update state to mark discovery as skipped/confirmed
+    state["discovery_confirmed"] = True
+    state["discovery_skipped"] = True  # Flag to indicate it was skipped
+    state["updated_at"] = datetime.now().isoformat()
+    workflow_data["state"] = state
+
+    # Mark as not interrupted so workflow can continue
+    workflow_data["interrupted"] = False
+    _save_workflow_data(thread_id, workflow_data)
+
+    logger.info(f"Discovery skipped for {thread_id}, proceeding to drafting")
+
+    # Resume workflow
+    asyncio.create_task(_resume_workflow(thread_id, "discovery_complete"))
+
+    return await get_workflow_status(thread_id)
+
+
+class RerunGapAnalysisRequest(BaseModel):
+    """Request to re-run gap analysis with updated profile/job data."""
+    profile_markdown: Optional[str] = None
+    job_markdown: Optional[str] = None
+
+
+@router.post("/{thread_id}/gap-analysis/rerun", response_model=WorkflowStateResponse)
+async def rerun_gap_analysis(thread_id: str, request: RerunGapAnalysisRequest = None):
+    """Re-run the gap analysis with the current user profile and job posting data.
+
+    Use this when users have updated their profile information (e.g., pasted in
+    additional resume content) and want to get a fresh gap analysis.
+
+    If profile_markdown or job_markdown are provided in the request body,
+    they will be used instead of the cached state values. This allows the
+    frontend to send edited content that was modified in the UI.
+    """
+    # Validate user input for injection attacks
+    if request:
+        if request.profile_markdown:
+            validate_input(request.profile_markdown, thread_id=thread_id)
+        if request.job_markdown:
+            validate_input(request.job_markdown, thread_id=thread_id)
+
+    workflow_data = _get_workflow_data(thread_id)
+    state = workflow_data.get("state", {})
+
+    # Update state with provided markdown if given (from frontend edits)
+    if request:
+        if request.profile_markdown:
+            state["profile_markdown"] = request.profile_markdown
+            state["profile_text"] = request.profile_markdown
+            logger.info(f"Using provided profile_markdown ({len(request.profile_markdown)} chars)")
+        if request.job_markdown:
+            state["job_markdown"] = request.job_markdown
+            state["job_text"] = request.job_markdown
+            logger.info(f"Using provided job_markdown ({len(request.job_markdown)} chars)")
+
+    # Verify we have profile/job data from either raw text or structured data
+    has_profile = state.get("profile_text") or state.get("profile_markdown") or state.get("user_profile")
+    has_job = state.get("job_text") or state.get("job_markdown") or state.get("job_posting")
+
+    if not has_profile or not has_job:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing user profile or job posting data. Cannot re-run gap analysis."
+        )
+
+    try:
+        # Run the analysis node directly with current state
+        analysis_result = await analyze_node(state)
+
+        if "errors" in analysis_result and analysis_result.get("current_step") == "error":
+            raise HTTPException(
+                status_code=500,
+                detail=analysis_result.get("errors", ["Analysis failed"])[-1]
+            )
+
+        # Update state with new gap analysis
+        if "gap_analysis" in analysis_result:
+            state["gap_analysis"] = analysis_result["gap_analysis"]
+            state["updated_at"] = datetime.now().isoformat()
+            workflow_data["state"] = state
+            _save_workflow_data(thread_id, workflow_data)
+            logger.info(f"Gap analysis re-run for {thread_id}")
+
+        return await get_workflow_status(thread_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to re-run gap analysis for {thread_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to re-run gap analysis: {str(e)}"
+        )
+
+
 class UpdateResearchDataRequest(BaseModel):
     """Request to update user profile or job posting data."""
     user_profile: Optional[dict] = None
@@ -682,7 +867,7 @@ async def update_research_data(thread_id: str, request: UpdateResearchDataReques
     return {
         "success": True,
         "user_profile": state.get("user_profile"),
-        "job_posting": state.get("job_posting"),
+        "job_posting": _enrich_job_posting(state),  # Merge job_company/job_title
     }
 
 
@@ -847,6 +1032,11 @@ async def stream_live_events(thread_id: str):
 @router.post("/{thread_id}/editor/assist")
 async def editor_assist(thread_id: str, action: EditorActionRequest):
     """Get AI assistance for editing a selection in the resume editor."""
+    # Validate user input for injection attacks
+    if action.instructions:
+        validate_input(action.instructions, thread_id=thread_id)
+    validate_input(action.selected_text, thread_id=thread_id)
+
     workflow_data = _get_workflow_data(thread_id)
     state = workflow_data.get("state", {})
 
@@ -874,6 +1064,9 @@ async def editor_assist(thread_id: str, action: EditorActionRequest):
 @router.post("/{thread_id}/editor/regenerate")
 async def regenerate_resume_section(thread_id: str, request: RegenerateSectionRequest):
     """Regenerate a specific resume section from scratch."""
+    # Validate user input for injection attacks
+    validate_input(request.current_content, thread_id=thread_id)
+
     workflow_data = _get_workflow_data(thread_id)
     state = workflow_data.get("state", {})
 
@@ -891,34 +1084,53 @@ async def regenerate_resume_section(thread_id: str, request: RegenerateSectionRe
 def _sanitize_html(html_content: str) -> str:
     """Sanitize HTML content to remove potentially dangerous elements.
 
-    Removes script tags, event handlers, and other XSS vectors while
-    preserving safe HTML formatting for resume display.
+    Uses the bleach library for proper HTML sanitization instead of regex,
+    which is more secure and handles edge cases correctly.
+
+    Allows safe HTML formatting tags commonly used in resumes while
+    blocking scripts, event handlers, and other XSS vectors.
     """
-    import re
+    import bleach
 
-    # Remove script tags and their content
-    html_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
-    html_content = re.sub(r'<script[^>]*/?>', '', html_content, flags=re.IGNORECASE)
+    # Tags allowed in resume HTML (safe formatting elements)
+    ALLOWED_TAGS = [
+        # Headings
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        # Text formatting
+        "p", "br", "hr",
+        "strong", "b", "em", "i", "u", "s", "mark",
+        "small", "sub", "sup",
+        # Lists
+        "ul", "ol", "li",
+        # Structure
+        "div", "span", "section", "article", "header", "footer",
+        # Tables (for structured resume layouts)
+        "table", "thead", "tbody", "tr", "th", "td",
+        # Links (href will be sanitized)
+        "a",
+        # Other safe elements
+        "blockquote", "pre", "code",
+    ]
 
-    # Remove style tags and their content (could contain expressions)
-    html_content = re.sub(r'<style[^>]*>.*?</style>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+    # Attributes allowed on specific tags
+    ALLOWED_ATTRIBUTES = {
+        "*": ["class", "id", "style"],  # Allow class/id/style on all tags
+        "a": ["href", "title", "target"],
+        "td": ["colspan", "rowspan"],
+        "th": ["colspan", "rowspan", "scope"],
+        "table": ["border", "cellpadding", "cellspacing"],
+    }
 
-    # Remove event handlers (onclick, onerror, onload, etc.)
-    html_content = re.sub(r'\s+on\w+\s*=\s*["\'][^"\']*["\']', '', html_content, flags=re.IGNORECASE)
-    html_content = re.sub(r'\s+on\w+\s*=\s*[^\s>]+', '', html_content, flags=re.IGNORECASE)
+    # Protocols allowed in href/src attributes
+    ALLOWED_PROTOCOLS = ["http", "https", "mailto"]
 
-    # Remove javascript: URLs
-    html_content = re.sub(r'href\s*=\s*["\']javascript:[^"\']*["\']', 'href=""', html_content, flags=re.IGNORECASE)
-    html_content = re.sub(r'src\s*=\s*["\']javascript:[^"\']*["\']', 'src=""', html_content, flags=re.IGNORECASE)
-
-    # Remove data: URLs in src (can be used for XSS)
-    html_content = re.sub(r'src\s*=\s*["\']data:[^"\']*["\']', 'src=""', html_content, flags=re.IGNORECASE)
-
-    # Remove iframe, object, embed tags
-    html_content = re.sub(r'<(iframe|object|embed)[^>]*>.*?</\1>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
-    html_content = re.sub(r'<(iframe|object|embed)[^>]*/>', '', html_content, flags=re.IGNORECASE)
-
-    return html_content
+    return bleach.clean(
+        html_content,
+        tags=ALLOWED_TAGS,
+        attributes=ALLOWED_ATTRIBUTES,
+        protocols=ALLOWED_PROTOCOLS,
+        strip=True,  # Strip disallowed tags instead of escaping
+    )
 
 
 @router.post("/{thread_id}/editor/update")
@@ -1064,7 +1276,6 @@ def _add_version_and_prune(
 @router.post("/{thread_id}/drafting/suggestion")
 async def handle_suggestion(thread_id: str, request: SuggestionActionRequest):
     """Accept or decline a suggestion."""
-    import uuid
 
     workflow_data = _get_workflow_data(thread_id)
     state = workflow_data.get("state", {})
@@ -1130,7 +1341,8 @@ async def handle_suggestion(thread_id: str, request: SuggestionActionRequest):
 @router.post("/{thread_id}/drafting/edit")
 async def handle_direct_edit(thread_id: str, request: DirectEditRequest):
     """Handle a direct edit from the user."""
-    import uuid
+    # Validate user input for injection attacks
+    validate_input(request.new_text, thread_id=thread_id)
 
     workflow_data = _get_workflow_data(thread_id)
     state = workflow_data.get("state", {})
@@ -1183,7 +1395,9 @@ async def handle_manual_save(thread_id: str, request: ManualSaveRequest):
     workflow_data = _get_workflow_data(thread_id)
     state = workflow_data.get("state", {})
 
+    # Update both resume_html and resume_final for consistency
     state["resume_html"] = request.html_content
+    state["resume_final"] = request.html_content
 
     new_version = _add_version_and_prune(
         state,
@@ -1246,6 +1460,39 @@ async def get_versions(thread_id: str):
     return {
         "versions": state.get("draft_versions", []),
         "current_version": state.get("draft_current_version"),
+    }
+
+
+@router.post("/{thread_id}/drafting/revert")
+async def revert_to_drafting(thread_id: str):
+    """Revert from export back to drafting for edits.
+
+    This allows users to go back and make corrections (e.g., fix email/contact info)
+    after they've already approved the draft.
+    """
+    workflow_data = _get_workflow_data(thread_id)
+    state = workflow_data.get("state", {})
+
+    # Revert the approval - keep resume_html so user can continue editing
+    state["draft_approved"] = False
+    state["current_step"] = "editor"  # Go back to editor step so frontend shows editable view
+    state["updated_at"] = datetime.now().isoformat()
+
+    # Clear export-related data since it's now stale
+    state.pop("export_output", None)
+    state.pop("ats_report", None)
+    state.pop("linkedin_suggestions", None)
+    state.pop("export_completed", None)
+    state.pop("export_step", None)
+
+    workflow_data["state"] = state
+    _save_workflow_data(thread_id, workflow_data)
+
+    return {
+        "success": True,
+        "message": "Reverted to drafting. You can now make edits.",
+        "draft_approved": False,
+        "current_step": "editor",
     }
 
 
@@ -1459,6 +1706,41 @@ async def get_linkedin_suggestions(thread_id: str):
     return linkedin
 
 
+@router.get("/{thread_id}/drafting/preview-pdf")
+async def preview_pdf(thread_id: str):
+    """Generate a PDF preview of the current resume draft.
+
+    Returns PDF for inline viewing (Content-Disposition: inline).
+    Use this to show users how their resume will look when exported.
+    """
+    workflow_data = _get_workflow_data(thread_id)
+    state = workflow_data.get("state", {})
+
+    html_content = state.get("resume_html")
+    if not html_content:
+        raise HTTPException(
+            status_code=400,
+            detail="No resume content to preview"
+        )
+
+    user_profile = state.get("user_profile") or {}
+    file_bytes, content_type, filename = export_resume(
+        html_content=html_content,
+        format="pdf",
+        filename_base="preview",
+        user_profile=user_profile if isinstance(user_profile, dict) else {},
+    )
+
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={
+            # inline instead of attachment so browser displays it
+            "Content-Disposition": 'inline; filename="preview.pdf"'
+        },
+    )
+
+
 @router.get("/{thread_id}/export/download/{format}")
 async def download_export(thread_id: str, format: str):
     """Download resume in specified format (pdf, txt, json, docx)."""
@@ -1566,7 +1848,7 @@ async def get_workflow_data_endpoint(thread_id: str):
         "thread_id": thread_id,
         "current_step": state.get("current_step"),
         "user_profile": state.get("user_profile"),
-        "job_posting": state.get("job_posting"),
+        "job_posting": _enrich_job_posting(state),  # Merge job_company/job_title
         "research": state.get("research"),
         "gap_analysis": state.get("gap_analysis"),
         "qa_history": state.get("qa_history", []),
@@ -1593,6 +1875,8 @@ async def delete_workflow(thread_id: str):
 
     # Delete from memory cache (using pop for atomic check-and-delete)
     _workflows.pop(thread_id, None)
+    # Clean up the associated lock
+    _workflow_locks.pop(thread_id, None)
 
     # Delete from Postgres (thread metadata and checkpoint data)
     metadata_service = get_metadata_service()
@@ -1655,7 +1939,7 @@ async def list_workflows(limit: int = 10, offset: int = 0):
 
 class CleanupRequest(BaseModel):
     """Request for cleanup endpoint."""
-    days_old: int = Field(default=30, ge=1, le=365, description="Delete threads not accessed in this many days")
+    hours_old: float = Field(default=2.0, ge=0.5, le=24.0, description="Delete threads not accessed in this many hours")
 
 
 class CleanupResponse(BaseModel):
@@ -1701,35 +1985,16 @@ async def cleanup_old_workflows(
 
     metadata_service = get_metadata_service()
 
-    # Check if database is configured
-    if not metadata_service.database_url:
-        # Memory-only cleanup
-        old_threads = []
-        cutoff = datetime.now() - timedelta(days=request.days_old)
+    # Get list of threads to clean up (in-memory)
+    expired_threads = metadata_service.get_expired_threads(hours_old=request.hours_old)
 
-        for thread_id, data in list(_workflows.items()):
-            created_at = _parse_timestamp(data.get("created_at", ""))
-            if created_at and created_at < cutoff:
-                del _workflows[thread_id]
-                old_threads.append(thread_id)
-
-        return CleanupResponse(
-            deleted=len(old_threads),
-            errors=0,
-            thread_ids=old_threads,
-            message="Memory-only cleanup (no database configured)"
-        )
-
-    # First, get the list of threads to clean up
-    expired_threads = metadata_service.get_expired_threads(days_old=request.days_old)
-
-    # Remove from memory cache FIRST to prevent race condition
-    # where another request tries to access a thread being deleted
+    # Remove from memory cache and locks FIRST to prevent race condition
     for thread_id in expired_threads:
         _workflows.pop(thread_id, None)
+        _workflow_locks.pop(thread_id, None)
 
-    # Now perform the database cleanup
-    result = metadata_service.cleanup_expired_threads(days_old=request.days_old)
+    # Perform the in-memory cleanup
+    result = metadata_service.cleanup_expired_threads(hours_old=request.hours_old)
 
     logger.info(
         f"Cleanup completed: deleted {result['deleted']} threads, "
@@ -1740,5 +2005,5 @@ async def cleanup_old_workflows(
         deleted=result["deleted"],
         errors=result["errors"],
         thread_ids=result["thread_ids"],
-        message=f"Cleaned up threads not accessed in {request.days_old} days"
+        message=f"Cleaned up threads not accessed in {request.hours_old} hours"
     )

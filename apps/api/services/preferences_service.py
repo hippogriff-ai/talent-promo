@@ -1,13 +1,14 @@
-"""User preferences service for managing writing style and content preferences.
+"""In-memory user preferences service for managing writing style and content preferences.
 
 This service handles:
-- User preferences CRUD operations
+- User preferences CRUD operations (in-memory)
 - Preference event recording (for learning from user behavior)
 - Preference computation from events
+
+Privacy by design: All data is ephemeral. Use browser localStorage for persistence.
 """
 
 import logging
-import os
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Literal, Optional
@@ -17,18 +18,25 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 
+# Type aliases for validated preference values
+ToneType = Literal["formal", "conversational", "confident", "humble"]
+StructureType = Literal["bullets", "paragraphs", "mixed"]
+SentenceLengthType = Literal["concise", "detailed", "mixed"]
+QuantificationType = Literal["heavy_metrics", "qualitative", "balanced"]
+
+
 class UserPreferences(BaseModel):
-    """User preferences model."""
+    """User preferences model with validated preference values."""
 
     id: Optional[str] = None
     user_id: str
-    # Writing style
-    tone: Optional[str] = None  # formal, conversational, confident, humble
-    structure: Optional[str] = None  # bullets, paragraphs, mixed
-    sentence_length: Optional[str] = None  # concise, detailed, mixed
+    # Writing style (validated Literal types)
+    tone: Optional[ToneType] = None
+    structure: Optional[StructureType] = None
+    sentence_length: Optional[SentenceLengthType] = None
     first_person: Optional[bool] = None
-    # Content choices
-    quantification_preference: Optional[str] = None  # heavy_metrics, qualitative, balanced
+    # Content choices (validated Literal types)
+    quantification_preference: Optional[QuantificationType] = None
     achievement_focus: Optional[bool] = None
     # Extensibility
     custom_preferences: dict = {}
@@ -40,105 +48,25 @@ class UserPreferences(BaseModel):
 class PreferenceEvent(BaseModel):
     """Preference event model for tracking user behavior."""
 
-    event_type: Literal["edit", "suggestion_accept", "suggestion_reject"]
+    event_type: Literal[
+        "edit",
+        "suggestion_accept",
+        "suggestion_reject",
+        "suggestion_dismiss",  # User dismissed suggestion without engaging (weak negative signal)
+        "suggestion_implicit_reject",  # User saw suggestion but edited differently (strong negative signal)
+    ]
     event_data: dict
     thread_id: Optional[str] = None
 
 
 class PreferencesService:
-    """Service for managing user preferences."""
+    """In-memory service for managing user preferences."""
 
-    def __init__(self, database_url: Optional[str] = None):
-        """Initialize the service.
-
-        Args:
-            database_url: Postgres connection string. If None, uses DATABASE_URL env var.
-        """
-        self.database_url = database_url or os.getenv("DATABASE_URL")
-        self._connection = None
-
-    def _get_connection(self):
-        """Get or create database connection."""
-        if not self.database_url:
-            logger.warning("No DATABASE_URL configured, preferences service disabled")
-            return None
-
-        if self._connection is None or self._connection.closed:
-            try:
-                import psycopg2
-
-                self._connection = psycopg2.connect(self.database_url)
-            except ImportError:
-                logger.error("psycopg2 not installed, preferences service disabled")
-                return None
-            except Exception as e:
-                logger.error(f"Failed to connect to database: {e}")
-                return None
-
-        return self._connection
-
-    def ensure_tables_exist(self) -> bool:
-        """Create preferences tables if they don't exist.
-
-        Returns:
-            True if tables exist or were created, False on error.
-        """
-        conn = self._get_connection()
-        if not conn:
-            return False
-
-        try:
-            cur = conn.cursor()
-
-            # Create user_preferences table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL,
-                    tone VARCHAR(50),
-                    structure VARCHAR(50),
-                    sentence_length VARCHAR(50),
-                    first_person BOOLEAN,
-                    quantification_preference VARCHAR(50),
-                    achievement_focus BOOLEAN,
-                    custom_preferences JSONB DEFAULT '{}',
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    UNIQUE(user_id)
-                )
-            """)
-
-            # Create preference_events table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS preference_events (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL,
-                    thread_id VARCHAR(255),
-                    event_type VARCHAR(50) NOT NULL,
-                    event_data JSONB NOT NULL,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                )
-            """)
-
-            # Create indexes
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user_id)"
-            )
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_preference_events_user_id ON preference_events(user_id)"
-            )
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_preference_events_type ON preference_events(event_type)"
-            )
-
-            conn.commit()
-            cur.close()
-            logger.info("Preferences tables created/verified successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to create preferences tables: {e}")
-            conn.rollback()
-            return False
+    def __init__(self):
+        """Initialize the service with in-memory storage."""
+        self._preferences: dict[str, UserPreferences] = {}
+        self._events: dict[str, list[dict]] = {}  # user_id -> list of events
+        logger.info("PreferencesService initialized (in-memory)")
 
     # ==================== Preferences CRUD ====================
 
@@ -146,54 +74,18 @@ class PreferencesService:
         """Get user preferences.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
 
         Returns:
             UserPreferences if found, None otherwise.
         """
-        conn = self._get_connection()
-        if not conn:
-            return None
+        return self._preferences.get(user_id)
 
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT id, user_id, tone, structure, sentence_length, first_person,
-                       quantification_preference, achievement_focus, custom_preferences,
-                       created_at, updated_at
-                FROM user_preferences
-                WHERE user_id = %s
-                """,
-                (user_id,),
-            )
-            row = cur.fetchone()
-            cur.close()
-
-            if row:
-                return UserPreferences(
-                    id=str(row[0]),
-                    user_id=str(row[1]),
-                    tone=row[2],
-                    structure=row[3],
-                    sentence_length=row[4],
-                    first_person=row[5],
-                    quantification_preference=row[6],
-                    achievement_focus=row[7],
-                    custom_preferences=row[8] or {},
-                    created_at=row[9],
-                    updated_at=row[10],
-                )
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get preferences: {e}")
-            return None
-
-    def get_or_create_preferences(self, user_id: str) -> Optional[UserPreferences]:
+    def get_or_create_preferences(self, user_id: str) -> UserPreferences:
         """Get existing preferences or create default ones.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
 
         Returns:
             UserPreferences (existing or newly created).
@@ -202,62 +94,29 @@ class PreferencesService:
         if prefs:
             return prefs
 
-        # Create default preferences
         return self.create_preferences(user_id)
 
-    def create_preferences(self, user_id: str) -> Optional[UserPreferences]:
+    def create_preferences(self, user_id: str) -> UserPreferences:
         """Create default preferences for a user.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
 
         Returns:
-            UserPreferences if created successfully.
+            UserPreferences.
         """
-        conn = self._get_connection()
-        if not conn:
-            return None
+        import uuid
 
-        try:
-            import json
-
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO user_preferences (user_id, custom_preferences)
-                VALUES (%s, %s)
-                ON CONFLICT (user_id) DO NOTHING
-                RETURNING id, user_id, tone, structure, sentence_length, first_person,
-                          quantification_preference, achievement_focus, custom_preferences,
-                          created_at, updated_at
-                """,
-                (user_id, json.dumps({})),
-            )
-            row = cur.fetchone()
-            conn.commit()
-            cur.close()
-
-            if row:
-                return UserPreferences(
-                    id=str(row[0]),
-                    user_id=str(row[1]),
-                    tone=row[2],
-                    structure=row[3],
-                    sentence_length=row[4],
-                    first_person=row[5],
-                    quantification_preference=row[6],
-                    achievement_focus=row[7],
-                    custom_preferences=row[8] or {},
-                    created_at=row[9],
-                    updated_at=row[10],
-                )
-
-            # If insert returned nothing (conflict), fetch existing
-            return self.get_preferences(user_id)
-        except Exception as e:
-            logger.error(f"Failed to create preferences: {e}")
-            conn.rollback()
-            return None
+        now = datetime.now(timezone.utc)
+        prefs = UserPreferences(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            custom_preferences={},
+            created_at=now,
+            updated_at=now,
+        )
+        self._preferences[user_id] = prefs
+        return prefs
 
     def update_preferences(
         self, user_id: str, updates: dict
@@ -265,15 +124,14 @@ class PreferencesService:
         """Update user preferences.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
             updates: Dict of field names to new values.
 
         Returns:
             Updated UserPreferences if successful.
         """
-        conn = self._get_connection()
-        if not conn:
-            return None
+        # Ensure preferences exist
+        prefs = self.get_or_create_preferences(user_id)
 
         # Allowed fields to update
         allowed_fields = {
@@ -286,112 +144,51 @@ class PreferencesService:
             "custom_preferences",
         }
 
-        # Filter to only allowed fields
-        filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields}
-        if not filtered_updates:
-            return self.get_preferences(user_id)
+        # Update allowed fields
+        for field, value in updates.items():
+            if field in allowed_fields:
+                setattr(prefs, field, value)
 
-        try:
-            import json
-
-            # Ensure preferences record exists
-            self.get_or_create_preferences(user_id)
-
-            # Build dynamic UPDATE query
-            set_clauses = []
-            values = []
-            for field, value in filtered_updates.items():
-                set_clauses.append(f"{field} = %s")
-                if field == "custom_preferences":
-                    values.append(json.dumps(value))
-                else:
-                    values.append(value)
-
-            values.append(user_id)
-
-            cur = conn.cursor()
-            cur.execute(
-                f"""
-                UPDATE user_preferences
-                SET {", ".join(set_clauses)}, updated_at = NOW()
-                WHERE user_id = %s
-                """,
-                tuple(values),
-            )
-            conn.commit()
-            cur.close()
-
-            return self.get_preferences(user_id)
-        except Exception as e:
-            logger.error(f"Failed to update preferences: {e}")
-            conn.rollback()
-            return None
+        prefs.updated_at = datetime.now(timezone.utc)
+        self._preferences[user_id] = prefs
+        return prefs
 
     def reset_preferences(self, user_id: str) -> Optional[UserPreferences]:
         """Reset user preferences to defaults.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
 
         Returns:
             Reset UserPreferences if successful.
         """
-        conn = self._get_connection()
-        if not conn:
-            return None
+        prefs = self._preferences.get(user_id)
+        if not prefs:
+            return self.create_preferences(user_id)
 
-        try:
-            import json
+        prefs.tone = None
+        prefs.structure = None
+        prefs.sentence_length = None
+        prefs.first_person = None
+        prefs.quantification_preference = None
+        prefs.achievement_focus = None
+        prefs.custom_preferences = {}
+        prefs.updated_at = datetime.now(timezone.utc)
 
-            cur = conn.cursor()
-            cur.execute(
-                """
-                UPDATE user_preferences
-                SET tone = NULL,
-                    structure = NULL,
-                    sentence_length = NULL,
-                    first_person = NULL,
-                    quantification_preference = NULL,
-                    achievement_focus = NULL,
-                    custom_preferences = %s,
-                    updated_at = NOW()
-                WHERE user_id = %s
-                """,
-                (json.dumps({}), user_id),
-            )
-            conn.commit()
-            cur.close()
-
-            return self.get_preferences(user_id)
-        except Exception as e:
-            logger.error(f"Failed to reset preferences: {e}")
-            conn.rollback()
-            return None
+        return prefs
 
     def delete_preferences(self, user_id: str) -> bool:
         """Delete all preferences and events for a user.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
 
         Returns:
             True if successful.
         """
-        conn = self._get_connection()
-        if not conn:
-            return False
-
-        try:
-            cur = conn.cursor()
-            cur.execute("DELETE FROM preference_events WHERE user_id = %s", (user_id,))
-            cur.execute("DELETE FROM user_preferences WHERE user_id = %s", (user_id,))
-            conn.commit()
-            cur.close()
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete preferences: {e}")
-            conn.rollback()
-            return False
+        self._preferences.pop(user_id, None)
+        self._events.pop(user_id, None)
+        return True
 
     # ==================== Event Recording ====================
 
@@ -403,39 +200,27 @@ class PreferencesService:
         """Record a preference event for learning.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
             event: The preference event to record.
 
         Returns:
             True if recorded successfully.
         """
-        conn = self._get_connection()
-        if not conn:
-            return False
+        import uuid
 
-        try:
-            import json
+        if user_id not in self._events:
+            self._events[user_id] = []
 
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO preference_events (user_id, thread_id, event_type, event_data)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (
-                    user_id,
-                    event.thread_id,
-                    event.event_type,
-                    json.dumps(event.event_data),
-                ),
-            )
-            conn.commit()
-            cur.close()
-            return True
-        except Exception as e:
-            logger.error(f"Failed to record event: {e}")
-            conn.rollback()
-            return False
+        event_dict = {
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "thread_id": event.thread_id,
+            "event_type": event.event_type,
+            "event_data": event.event_data,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._events[user_id].append(event_dict)
+        return True
 
     def get_events(
         self,
@@ -446,86 +231,33 @@ class PreferencesService:
         """Get preference events for a user.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
             event_type: Optional filter by event type.
             limit: Maximum number of events to return.
 
         Returns:
             List of event dicts.
         """
-        conn = self._get_connection()
-        if not conn:
-            return []
+        events = self._events.get(user_id, [])
 
-        try:
-            cur = conn.cursor()
+        if event_type:
+            events = [e for e in events if e.get("event_type") == event_type]
 
-            if event_type:
-                cur.execute(
-                    """
-                    SELECT id, user_id, thread_id, event_type, event_data, created_at
-                    FROM preference_events
-                    WHERE user_id = %s AND event_type = %s
-                    ORDER BY created_at DESC
-                    LIMIT %s
-                    """,
-                    (user_id, event_type, limit),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT id, user_id, thread_id, event_type, event_data, created_at
-                    FROM preference_events
-                    WHERE user_id = %s
-                    ORDER BY created_at DESC
-                    LIMIT %s
-                    """,
-                    (user_id, limit),
-                )
+        # Sort by created_at descending
+        events = sorted(events, key=lambda e: e.get("created_at", ""), reverse=True)
 
-            rows = cur.fetchall()
-            cur.close()
-
-            return [
-                {
-                    "id": str(row[0]),
-                    "user_id": str(row[1]),
-                    "thread_id": row[2],
-                    "event_type": row[3],
-                    "event_data": row[4] or {},
-                    "created_at": row[5].isoformat() if row[5] else None,
-                }
-                for row in rows
-            ]
-        except Exception as e:
-            logger.error(f"Failed to get events: {e}")
-            return []
+        return events[:limit]
 
     def get_event_count(self, user_id: str) -> int:
         """Get the total number of events for a user.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
 
         Returns:
             Number of events.
         """
-        conn = self._get_connection()
-        if not conn:
-            return 0
-
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT COUNT(*) FROM preference_events WHERE user_id = %s",
-                (user_id,),
-            )
-            result = cur.fetchone()
-            cur.close()
-            return result[0] if result else 0
-        except Exception as e:
-            logger.error(f"Failed to get event count: {e}")
-            return 0
+        return len(self._events.get(user_id, []))
 
     # ==================== Preference Learning ====================
 
@@ -536,7 +268,7 @@ class PreferencesService:
         infer user preferences.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
 
         Returns:
             Computed UserPreferences (not saved).
@@ -546,10 +278,10 @@ class PreferencesService:
             return None
 
         # Analyze events to infer preferences
-        tone_votes = Counter()
-        structure_votes = Counter()
-        first_person_votes = Counter()
-        achievement_votes = Counter()
+        tone_votes: Counter = Counter()
+        structure_votes: Counter = Counter()
+        first_person_votes: Counter = Counter()
+        achievement_votes: Counter = Counter()
 
         for event in events:
             event_data = event.get("event_data", {})
@@ -594,7 +326,7 @@ class PreferencesService:
         """Compute preferences from events and save them.
 
         Args:
-            user_id: User's UUID.
+            user_id: User's ID.
 
         Returns:
             Updated UserPreferences.
@@ -620,10 +352,9 @@ class PreferencesService:
         return self.get_preferences(user_id)
 
     def close(self):
-        """Close the database connection."""
-        if self._connection and not self._connection.closed:
-            self._connection.close()
-            self._connection = None
+        """Clear all data."""
+        self._preferences.clear()
+        self._events.clear()
 
 
 # Singleton instance for use across the application
@@ -635,5 +366,12 @@ def get_preferences_service() -> PreferencesService:
     global _preferences_service
     if _preferences_service is None:
         _preferences_service = PreferencesService()
-        _preferences_service.ensure_tables_exist()
     return _preferences_service
+
+
+def reset_preferences_service():
+    """Reset singleton (for testing)."""
+    global _preferences_service
+    if _preferences_service:
+        _preferences_service.close()
+    _preferences_service = None

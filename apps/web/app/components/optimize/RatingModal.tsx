@@ -1,9 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@/app/hooks/useAuth";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface RatingModalProps {
   threadId: string;
@@ -96,7 +93,6 @@ export function RatingModal({
   onClose,
   onSubmit,
 }: RatingModalProps) {
-  const { isAuthenticated } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [rating, setRating] = useState<RatingData>({
     overall_quality: null,
@@ -131,18 +127,8 @@ export function RatingModal({
     };
 
     try {
-      if (isAuthenticated) {
-        // Submit to API
-        await fetch(`${API_URL}/api/ratings`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(ratingPayload),
-          credentials: "include",
-        });
-      } else {
-        // Store locally for anonymous users
-        saveToLocalStorage(ratingPayload);
-      }
+      // Store locally for anonymous users
+      saveToLocalStorage(ratingPayload);
 
       onSubmit?.();
       onClose();

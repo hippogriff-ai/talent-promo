@@ -1,9 +1,9 @@
-"""LangGraph Store-based memory service with file system metaphor.
+"""In-memory store service with file system metaphor.
 
 This service follows Harrison Chase's patterns:
 - Memory as file system: namespaces as folders, keys as filenames
 - Three memory types: Procedural, Semantic, Episodic (COALA paper)
-- PostgresStore for production, InMemoryStore for development
+- InMemoryStore only (no persistence - privacy by design)
 
 Namespace structure:
     ("users", user_id, "procedural")  - System prompts, preferences
@@ -19,11 +19,11 @@ File system exposure:
 
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
 from pydantic import BaseModel
+from langgraph.store.memory import InMemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -41,47 +41,22 @@ class MemoryItem(BaseModel):
 
 
 class MemoryStoreService:
-    """LangGraph Store-based memory with file system metaphor.
+    """In-memory store with file system metaphor.
 
     - Namespaces = folders (hierarchical paths)
     - Keys = filenames (unique identifiers)
     - Values = JSON documents
     """
 
-    def __init__(self, database_url: Optional[str] = None):
-        """Initialize the memory store.
+    def __init__(self):
+        """Initialize the memory store with InMemoryStore."""
+        self._store: Optional[InMemoryStore] = None
 
-        Args:
-            database_url: Postgres connection string. Falls back to InMemoryStore if not provided.
-        """
-        self.database_url = database_url or os.getenv("DATABASE_URL")
-        self._store = None
-        self._is_postgres = False
-
-    def _get_store(self):
-        """Get or create the LangGraph store instance."""
-        if self._store is not None:
-            return self._store
-
-        if self.database_url:
-            try:
-                from langgraph.store.postgres import PostgresStore
-
-                self._store = PostgresStore.from_conn_string(self.database_url)
-                self._store.setup()
-                self._is_postgres = True
-                logger.info("Using PostgresStore for memory")
-            except Exception as e:
-                logger.warning(f"PostgresStore failed ({e}), using InMemoryStore")
-                from langgraph.store.memory import InMemoryStore
-
-                self._store = InMemoryStore()
-        else:
-            from langgraph.store.memory import InMemoryStore
-
+    def _get_store(self) -> InMemoryStore:
+        """Get or create the InMemoryStore instance."""
+        if self._store is None:
             self._store = InMemoryStore()
-            logger.info("Using InMemoryStore (no DATABASE_URL)")
-
+            logger.info("Using InMemoryStore (no persistence - privacy by design)")
         return self._store
 
     def _namespace(self, user_id: str, memory_type: MemoryType) -> tuple[str, ...]:
@@ -335,7 +310,7 @@ class MemoryStoreService:
         }
 
     def close(self):
-        """Close store connection."""
+        """Close store (no-op for in-memory)."""
         self._store = None
 
 

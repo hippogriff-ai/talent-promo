@@ -8,12 +8,13 @@ import {
 import ATSReportDisplay from "./ATSReportDisplay";
 import LinkedInSuggestionsDisplay from "./LinkedInSuggestionsDisplay";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = "";
 
 interface ExportStepProps {
   threadId: string;
   draftApproved: boolean;
   onComplete?: () => void;
+  onGoBackToDrafting?: () => void;
 }
 
 const EXPORT_STEPS: { step: ExportStepType; label: string }[] = [
@@ -40,6 +41,7 @@ export default function ExportStep({
   threadId,
   draftApproved,
   onComplete,
+  onGoBackToDrafting,
 }: ExportStepProps) {
   const storage = useExportStorage();
   const [isExporting, setIsExporting] = useState(false);
@@ -111,10 +113,7 @@ export default function ExportStep({
     async (format: "pdf" | "txt" | "json" | "docx") => {
       try {
         const response = await fetch(
-          `${API_URL}/api/optimize/${threadId}/export/download/${format}`,
-          {
-            method: "POST",
-          }
+          `${API_URL}/api/optimize/${threadId}/export/download/${format}`
         );
 
         if (!response.ok) {
@@ -260,14 +259,28 @@ export default function ExportStep({
             Generate ATS-optimized files and LinkedIn suggestions
           </p>
         </div>
-        {exportCompleted && (
-          <button
-            onClick={reExport}
-            className="text-sm text-blue-600 hover:text-blue-800"
-          >
-            Re-export
-          </button>
-        )}
+        <div className="flex items-center space-x-4">
+          {onGoBackToDrafting && (
+            <button
+              onClick={onGoBackToDrafting}
+              className="text-sm text-gray-600 hover:text-gray-800 flex items-center"
+              data-testid="go-back-to-edit"
+            >
+              <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+              </svg>
+              Edit Resume
+            </button>
+          )}
+          {exportCompleted && (
+            <button
+              onClick={reExport}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Re-export
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Error */}

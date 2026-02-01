@@ -55,7 +55,7 @@ export class DiscoveryPage {
     this.questionCount = page.getByText(/question \d+ of/i);
 
     // Actions
-    this.confirmButton = page.getByRole('button', { name: /complete discovery|confirm|continue|proceed/i });
+    this.confirmButton = page.getByRole('button', { name: /^complete$|complete discovery|confirm|continue|proceed/i });
     this.skipButton = page.getByRole('button', { name: /skip/i });
     this.skipRemainingLink = page.getByRole('button', { name: /skip remaining/i });
   }

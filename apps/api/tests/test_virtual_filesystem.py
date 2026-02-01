@@ -17,7 +17,6 @@ from middleware.virtual_filesystem import (
     TOOL_TOKEN_LIMIT_BEFORE_EVICT,
     CHARS_PER_TOKEN,
 )
-from services.preferences_service import UserPreferences
 
 
 # ==================== Fixtures ====================
@@ -29,7 +28,7 @@ def vfs():
     reset_vfs()
     fs = VirtualFilesystem(thread_id="test_thread")
     yield fs
-    fs.close()
+    reset_vfs()  # Clean up singleton
 
 
 @pytest.fixture
@@ -38,7 +37,7 @@ def vfs_no_user():
     reset_vfs()
     fs = VirtualFilesystem(thread_id="test_thread")
     yield fs
-    fs.close()
+    reset_vfs()  # Clean up singleton
 
 
 # ==================== Path Validation ====================
@@ -169,7 +168,6 @@ class TestLs:
 
         assert "/file1.txt" in paths
         assert "/dir/" in paths  # Directory
-        assert "/memory/" in paths  # Memory dir (user_id set)
 
     def test_ls_subdirectory(self, vfs):
         """List subdirectory."""
@@ -267,49 +265,9 @@ class TestGlob:
 
 
 # ==================== User Preferences ====================
-
-
-class TestUserPreferences:
-    """Test simplified user preference memory."""
-
-    def test_save_and_get_preferences(self, vfs):
-        """Save then retrieve preferences."""
-        prefs = UserPreferences(
-            tone="confident",
-            length="detailed",
-            format="bullets",
-            job_type_interest="software engineer",
-        )
-
-        assert vfs.save_preferences(prefs)
-
-        loaded = vfs.get_preferences()
-        assert loaded is not None
-        assert loaded.tone == "confident"
-        assert loaded.length == "detailed"
-        assert loaded.format == "bullets"
-        assert loaded.job_type_interest == "software engineer"
-
-    def test_get_preferences_default(self, vfs):
-        """Get preferences returns None if not set."""
-        loaded = vfs.get_preferences()
-        # May be None or default depending on implementation
-        # In state-only mode without Postgres, memory operations fail gracefully
-
-    def test_get_memory_context_for_prompt(self, vfs):
-        """Get memory context formats for LLM."""
-        prefs = UserPreferences(
-            tone="friendly",
-            length="concise",
-            format="paragraphs",
-        )
-        vfs.save_preferences(prefs)
-
-        context = vfs.get_memory_context_for_prompt()
-        assert "<user_memory>" in context
-        assert "tone: friendly" in context
-        assert "length: concise" in context
-        assert "</user_memory>" in context
+# User preferences are now handled via frontend localStorage and
+# the preferences_service API, not via VirtualFilesystem.
+# See tests/test_preferences.py for preference tests.
 
 
 # ==================== Large Tool Result Offloading ====================
@@ -373,7 +331,6 @@ class TestStateManagement:
         state = vfs.get_state()
         assert "files" in state
         assert "/test.txt" in state["files"]
-        assert state["user_id"] == "test_user"
         assert state["thread_id"] == "test_thread"
 
     def test_restore_state(self, vfs):
@@ -388,7 +345,6 @@ class TestStateManagement:
                     "modified_at": "2024-01-01T00:00:00Z",
                 }
             },
-            "user_id": "restored_user",
             "thread_id": "restored_thread",
         }
 
@@ -411,45 +367,30 @@ class TestSingleton:
     def test_get_vfs_creates_instance(self):
         """get_vfs creates new instance."""
         reset_vfs()
-        vfs1 = get_vfs(user_id="user1", thread_id="thread1")
+        vfs1 = get_vfs(thread_id="thread1")
         assert vfs1 is not None
-        assert vfs1.user_id == "user1"
+        assert vfs1.thread_id == "thread1"
 
     def test_get_vfs_reuses_instance(self):
         """get_vfs reuses instance with same params."""
         reset_vfs()
-        vfs1 = get_vfs(user_id="user1", thread_id="thread1")
-        vfs2 = get_vfs(user_id="user1", thread_id="thread1")
+        vfs1 = get_vfs(thread_id="thread1")
+        vfs2 = get_vfs(thread_id="thread1")
         assert vfs1 is vfs2
 
-    def test_get_vfs_new_user(self):
-        """get_vfs creates new instance for different user."""
+    def test_get_vfs_new_thread(self):
+        """get_vfs creates new instance for different thread."""
         reset_vfs()
-        vfs1 = get_vfs(user_id="user1", thread_id="thread1")
-        vfs2 = get_vfs(user_id="user2", thread_id="thread1")
+        vfs1 = get_vfs(thread_id="thread1")
+        vfs2 = get_vfs(thread_id="thread2")
         assert vfs1 is not vfs2
-        assert vfs2.user_id == "user2"
+        assert vfs2.thread_id == "thread2"
 
 
-# ==================== Memory Without User ====================
-
-
-class TestMemoryWithoutUser:
-    """Test memory operations without user_id."""
-
-    def test_memory_not_available(self, vfs_no_user):
-        """Memory operations fail gracefully without user."""
-        content = vfs_no_user.read("/memory/preferences.json")
-        assert "user_id required" in content or "not found" in content.lower()
-
-    def test_ls_root_no_memory_dir(self, vfs_no_user):
-        """Root listing doesn't show /memory/ without user."""
-        vfs_no_user.write("/test.txt", "content")
-        infos = vfs_no_user.ls("/")
-        paths = [f.path for f in infos]
-
-        assert "/test.txt" in paths
-        assert "/memory/" not in paths
+# ==================== Anonymous Mode ====================
+# VFS no longer has user_id or memory directories.
+# User preferences are handled via frontend localStorage and backend API.
+# See tests/test_preferences.py for preference tests.
 
 
 # ==================== Line Number Formatting ====================

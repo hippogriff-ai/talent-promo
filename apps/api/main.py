@@ -36,7 +36,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 # Note: Using absolute import from routers for compatibility with pytest pythonpath config
 # When running the API, use: cd apps/api && uvicorn main:app --reload
-from routers import agents, documents, jobs, research, research_agent, optimize, arena, filesystem  # noqa: E402
+from routers import agents, documents, jobs, research, research_agent, optimize, filesystem, preferences, ratings  # noqa: E402
+from services.thread_metadata import get_metadata_service  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +53,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifecycle."""
     # Startup
     logger.info("Starting Talent Promo API...")
+
+    # Start the thread cleanup background task (2h TTL)
+    metadata_service = get_metadata_service()
+    metadata_service.start_cleanup_task()
+    logger.info("Thread cleanup task started (2h TTL)")
+
     logger.info("API ready to accept requests")
 
     yield  # Application runs here
 
     # Shutdown
     logger.info("Shutting down Talent Promo API...")
+
+    # Stop thread cleanup task
+    metadata_service.stop_cleanup_task()
+    logger.info("Thread cleanup task stopped")
+
     # Close Temporal client if initialized
     if research_agent._temporal_client:
         try:
@@ -95,6 +107,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Expose Content-Disposition so browsers can read filename for cross-origin downloads
+    expose_headers=["Content-Disposition"],
 )
 
 # Include routers
@@ -104,8 +118,9 @@ app.include_router(research_agent.router)
 app.include_router(jobs.router)
 app.include_router(documents.router)
 app.include_router(optimize.router)  # LangGraph resume optimization workflow
-app.include_router(arena.router)  # Arena A/B comparison
 app.include_router(filesystem.router)  # Virtual filesystem with Linux-like commands
+app.include_router(preferences.router)  # User preferences (anonymous)
+app.include_router(ratings.router)  # Draft ratings (anonymous)
 
 
 @app.get("/")

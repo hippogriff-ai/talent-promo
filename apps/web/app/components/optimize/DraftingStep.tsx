@@ -19,8 +19,12 @@ import { useEditTracking } from "../../hooks/useEditTracking";
 import { SuggestionList } from "./SuggestionCard";
 import VersionHistory from "./VersionHistory";
 import PreferenceSidebar from "./PreferenceSidebar";
+import DraftingChat from "./DraftingChat";
+import { ResumeDiffView } from "./ResumeDiffView";
+import ValidationWarnings from "./ValidationWarnings";
+import type { ValidationResults } from "../../types/guardrails";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = "";
 
 interface DraftingStepProps {
   threadId: string;
@@ -53,6 +57,7 @@ interface DraftingStepProps {
   }>;
   currentVersion: string;
   draftApproved: boolean;
+  draftValidation?: ValidationResults | null;
   onApprove: () => void;
 }
 
@@ -73,6 +78,7 @@ export default function DraftingStep({
   versions: backendVersions,
   currentVersion: backendCurrentVersion,
   draftApproved,
+  draftValidation,
   onApprove,
 }: DraftingStepProps) {
   const storage = useDraftingStorage();
@@ -93,7 +99,7 @@ export default function DraftingStep({
   } = useDraftingState(threadId);
 
   // Preference tracking hooks
-  const { trackAccept, trackReject } = useSuggestionTracking({ threadId });
+  const { trackAccept, trackReject, trackDismiss, trackImplicitReject } = useSuggestionTracking({ threadId });
   const { trackTextChange, flush: flushEdits } = useEditTracking({ threadId });
 
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
@@ -101,18 +107,26 @@ export default function DraftingStep({
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [lastSavedContent, setLastSavedContent] = useState(initialHtml);
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set());
+  const [selectedText, setSelectedText] = useState("");
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [showDiffView, setShowDiffView] = useState(false);
 
-  // Convert backend data to frontend format
-  const suggestions: DraftingSuggestion[] = backendSuggestions.map((s) => ({
-    id: s.id,
-    location: s.location,
-    originalText: s.original_text,
-    proposedText: s.proposed_text,
-    rationale: s.rationale,
-    status: s.status as "pending" | "accepted" | "declined",
-    createdAt: s.created_at,
-    resolvedAt: s.resolved_at,
-  }));
+  // Convert backend data to frontend format, excluding dismissed suggestions
+  const suggestions: DraftingSuggestion[] = backendSuggestions
+    .filter((s) => !dismissedSuggestions.has(s.id))
+    .map((s) => ({
+      id: s.id,
+      location: s.location,
+      originalText: s.original_text,
+      proposedText: s.proposed_text,
+      rationale: s.rationale,
+      status: s.status as "pending" | "accepted" | "declined",
+      createdAt: s.created_at,
+      resolvedAt: s.resolved_at,
+    }));
 
   const versions: DraftVersion[] = backendVersions.map((v) => ({
     version: v.version,
@@ -158,6 +172,25 @@ export default function DraftingStep({
       if (previousContent !== newText) {
         trackTextChange(previousContent, newText);
         setPreviousContent(newText);
+      }
+      // Track unsaved changes by comparing HTML
+      const currentHtml = editor.getHTML();
+      setHasUnsavedChanges(currentHtml !== lastSavedContent);
+
+      // Clear selected text if selection is now collapsed (e.g., after deleting selected text)
+      const { from, to } = editor.state.selection;
+      if (from === to) {
+        setSelectedText("");
+      }
+    },
+    onSelectionUpdate: ({ editor }) => {
+      // Track selected text for chat commands
+      const { from, to } = editor.state.selection;
+      if (from !== to) {
+        const text = editor.state.doc.textBetween(from, to, " ");
+        setSelectedText(text);
+      } else {
+        setSelectedText("");
       }
     },
   });
@@ -219,6 +252,8 @@ export default function DraftingStep({
       const newState = await fetchDraftingState();
       if (newState?.resume_html && editor) {
         editor.commands.setContent(newState.resume_html);
+        setLastSavedContent(newState.resume_html);
+        setHasUnsavedChanges(false);
       }
     }
   };
@@ -245,6 +280,29 @@ export default function DraftingStep({
     }
   };
 
+  // Handle suggestion dismiss (hide without accepting/declining)
+  const handleDismiss = async (id: string) => {
+    // Find the suggestion to track it (from backendSuggestions since suggestions is filtered)
+    const suggestion = backendSuggestions.find((s) => s.id === id);
+    if (suggestion) {
+      // Track the dismiss for preference learning (weak negative signal)
+      await trackDismiss({
+        id: suggestion.id,
+        location: suggestion.location,
+        original_text: suggestion.original_text,
+        proposed_text: suggestion.proposed_text,
+        rationale: suggestion.rationale,
+      });
+    }
+
+    setDismissedSuggestions((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(id);
+      return newSet;
+    });
+    showSaveMessage("Suggestion dismissed");
+  };
+
   // Handle version restore
   const handleRestore = async (version: string) => {
     const result = await restoreVersion(version);
@@ -255,16 +313,55 @@ export default function DraftingStep({
       const newState = await fetchDraftingState();
       if (newState?.resume_html && editor) {
         editor.commands.setContent(newState.resume_html);
+        setLastSavedContent(newState.resume_html);
+        setHasUnsavedChanges(false);
       }
     }
   };
 
-  // Handle manual save
-  const handleSave = async () => {
-    if (!editor) return;
+  /**
+   * Detect implicit rejections: user edited content in a way that differs from pending suggestions.
+   * Called before save to capture the learning signal.
+   */
+  const detectImplicitRejections = async (currentText: string) => {
+    const pendingSuggestions = backendSuggestions.filter(
+      (s) => s.status === "pending" && !dismissedSuggestions.has(s.id)
+    );
+
+    for (const suggestion of pendingSuggestions) {
+      // Check if the user's content contains the original text location
+      // and they didn't accept the suggestion (content doesn't match proposed)
+      const hasOriginal = currentText.includes(suggestion.original_text.trim());
+      const hasProposed = currentText.includes(suggestion.proposed_text.trim());
+
+      // If original is gone but proposed wasn't taken, user manually edited it
+      if (!hasOriginal && !hasProposed) {
+        // Find what the user wrote instead (simplified: extract text around the location)
+        // Since we can't precisely locate, we'll just note that they edited differently
+        await trackImplicitReject(
+          {
+            id: suggestion.id,
+            location: suggestion.location,
+            original_text: suggestion.original_text,
+            proposed_text: suggestion.proposed_text,
+            rationale: suggestion.rationale,
+          },
+          currentText.substring(0, 500) // Send truncated content as context
+        );
+      }
+    }
+  };
+
+  // Handle manual save - returns true if save succeeded
+  const handleSave = async (): Promise<boolean> => {
+    if (!editor) return false;
 
     setIsSaving(true);
     const html = editor.getHTML();
+    const plainText = editor.getText();
+
+    // Detect implicit rejections before saving
+    await detectImplicitRejections(plainText);
 
     // Flush pending edit tracking events before saving
     await flushEdits();
@@ -273,16 +370,30 @@ export default function DraftingStep({
     if (result) {
       storage.manualSave();
       showSaveMessage(result.message || `Saved as v${result.version}`);
+      setLastSavedContent(html);
+      setHasUnsavedChanges(false);
+      setIsSaving(false);
+      return true;
     }
 
     setIsSaving(false);
+    return false;
   };
 
-  // Handle approve
+  // Handle approve - auto-saves current editor content before approving
   const handleApprove = async () => {
     if (pendingCount > 0) {
       setValidationErrors([`${pendingCount} suggestions still pending`]);
       return;
+    }
+
+    // Auto-save current editor content before approval to ensure no edits are lost
+    if (hasUnsavedChanges) {
+      const saved = await handleSave();
+      if (!saved) {
+        setValidationErrors(["Failed to save changes. Please try again."]);
+        return;
+      }
     }
 
     const result = await approveDraft();
@@ -302,12 +413,60 @@ export default function DraftingStep({
     setTimeout(() => setSaveMessage(null), 3000);
   };
 
+  // Handle chat suggestion application
+  const handleChatApplySuggestion = (originalText: string, newText: string) => {
+    if (!editor) return;
+
+    const currentHtml = editor.getHTML();
+    // Replace the text in the editor
+    if (originalText) {
+      const newHtml = currentHtml.replace(originalText, newText);
+      editor.commands.setContent(newHtml);
+      setHasUnsavedChanges(true);
+      showSaveMessage("Applied chat suggestion");
+    }
+  };
+
+  // Clear text selection in editor
+  const handleClearSelection = () => {
+    setSelectedText("");
+    if (editor) {
+      editor.commands.setTextSelection(editor.state.selection.from);
+    }
+  };
+
+  /**
+   * Open PDF preview in a new tab.
+   * Saves current content first if there are unsaved changes.
+   */
+  const handlePreviewPdf = async () => {
+    setIsPreviewLoading(true);
+    try {
+      // Save first if there are unsaved changes
+      if (hasUnsavedChanges) {
+        const saved = await handleSave();
+        if (!saved) {
+          showSaveMessage("Failed to save before preview");
+          return;
+        }
+      }
+
+      // Open PDF preview in new tab
+      const previewUrl = `${API_URL}/api/optimize/${threadId}/drafting/preview-pdf`;
+      window.open(previewUrl, "_blank");
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
   // Handle session recovery
   const handleResumeSession = () => {
     if (storage.existingSession) {
       storage.resumeSession(storage.existingSession);
       if (editor && storage.existingSession.resumeHtml) {
         editor.commands.setContent(storage.existingSession.resumeHtml);
+        // Mark recovered session as having unsaved changes since it may differ from backend
+        setHasUnsavedChanges(true);
       }
     }
     setShowRecoveryPrompt(false);
@@ -316,6 +475,8 @@ export default function DraftingStep({
   const handleStartFresh = () => {
     storage.clearSession(threadId);
     storage.startSession(threadId, initialHtml, suggestions);
+    setLastSavedContent(initialHtml);
+    setHasUnsavedChanges(false);
     setShowRecoveryPrompt(false);
   };
 
@@ -370,6 +531,9 @@ export default function DraftingStep({
           />
         </div>
       </div>
+
+      {/* AI Safety Validation Warnings */}
+      <ValidationWarnings validation={draftValidation ?? null} />
 
       {/* Validation Errors */}
       {validationErrors.length > 0 && (
@@ -468,8 +632,8 @@ export default function DraftingStep({
 
               <div className="flex-1" />
 
-              {/* Save message */}
-              {saveMessage && (
+              {/* Save status indicator */}
+              {saveMessage ? (
                 <span className="text-sm text-green-600 flex items-center">
                   <svg
                     className="w-4 h-4 mr-1"
@@ -486,8 +650,48 @@ export default function DraftingStep({
                   </svg>
                   {saveMessage}
                 </span>
-              )}
+              ) : hasUnsavedChanges ? (
+                <span className="text-sm text-amber-600 flex items-center" data-testid="unsaved-indicator">
+                  <svg
+                    className="w-4 h-4 mr-1"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <circle cx="10" cy="10" r="5" />
+                  </svg>
+                  Unsaved changes
+                </span>
+              ) : null}
 
+              <button
+                onClick={() => setShowDiffView(true)}
+                disabled={!editor || backendVersions.length === 0}
+                className="px-4 py-1.5 bg-blue-100 text-blue-700 text-sm rounded hover:bg-blue-200 disabled:opacity-50 transition-colors flex items-center"
+                title="Compare your current resume with the original version"
+              >
+                <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+                </svg>
+                Compare Changes
+              </button>
+              <button
+                onClick={handlePreviewPdf}
+                disabled={isPreviewLoading || !editor}
+                className="px-4 py-1.5 bg-purple-100 text-purple-700 text-sm rounded hover:bg-purple-200 disabled:opacity-50 transition-colors flex items-center"
+                title="Preview how your resume will look as a PDF"
+              >
+                {isPreviewLoading ? (
+                  "Loading..."
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    Preview PDF
+                  </>
+                )}
+              </button>
               <button
                 onClick={handleSave}
                 disabled={isSaving}
@@ -504,8 +708,18 @@ export default function DraftingStep({
           </div>
         </div>
 
-        {/* Suggestions Panel */}
+        {/* Right Panel: Suggestions + Chat */}
         <div className="space-y-4">
+          {/* AI Chat Assistant */}
+          <div className="h-[300px]">
+            <DraftingChat
+              threadId={threadId}
+              selectedText={selectedText}
+              onApplySuggestion={handleChatApplySuggestion}
+              onClearSelection={handleClearSelection}
+            />
+          </div>
+
           {/* Suggestions Header */}
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-gray-900">
@@ -523,11 +737,12 @@ export default function DraftingStep({
           </div>
 
           {/* Suggestions List */}
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[300px] overflow-y-auto">
             <SuggestionList
               suggestions={suggestions}
               onAccept={handleAccept}
               onDecline={handleDecline}
+              onDismiss={handleDismiss}
               isLoading={suggestionLoading}
               showResolved={showResolved}
             />
@@ -561,6 +776,15 @@ export default function DraftingStep({
 
       {/* Preference Sidebar */}
       <PreferenceSidebar />
+
+      {/* Diff View Modal */}
+      {showDiffView && editor && backendVersions.length > 0 && (
+        <ResumeDiffView
+          originalHtml={backendVersions[0].html_content}
+          optimizedHtml={editor.getHTML()}
+          onClose={() => setShowDiffView(false)}
+        />
+      )}
     </div>
   );
 }

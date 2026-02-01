@@ -91,7 +91,7 @@ export default function Home() {
   const [showGuide, setShowGuide] = useState(false);
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [jobUrl, setJobUrl] = useState("");
-  const [inputMode, setInputMode] = useState<"linkedin" | "paste">("linkedin");
+  const [inputMode, setInputMode] = useState<"linkedin" | "paste">("paste");
   const [jobInputMode, setJobInputMode] = useState<"url" | "paste">("url");
   const [resumeText, setResumeText] = useState("");
   const [jobText, setJobText] = useState("");
@@ -112,6 +112,17 @@ export default function Home() {
   const [showJobDropdown, setShowJobDropdown] = useState(false);
   const linkedinInputRef = useRef<HTMLInputElement>(null);
   const jobInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle mode query param (e.g., /?mode=paste from error recovery)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get("mode");
+    if (mode === "paste") {
+      setInputMode("paste");
+      // Clear the query param from URL without reload
+      window.history.replaceState({}, "", "/");
+    }
+  }, []);
 
   useEffect(() => {
     // Randomize challenge on client side to avoid hydration mismatch
@@ -221,6 +232,39 @@ export default function Home() {
 
       <OnboardingGuide isOpen={showGuide} onClose={() => setShowGuide(false)} />
 
+      {/* Demo Disclaimer Banner */}
+      <div className="bg-amber-50 border-b border-amber-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="text-sm text-amber-900">
+              <p className="font-semibold mb-1">
+                Demo App &mdash; Built by Vicki | Not for commercial use
+              </p>
+              <ul className="space-y-0.5 text-amber-800">
+                <li><strong>No server-side storage.</strong> All data stays in your browser and is never saved on our servers.</li>
+                <li><strong>Tracing enabled.</strong> We use LangSmith for observability. Avoid entering sensitive PII (SSN, financial info, etc.).</li>
+                <li><strong>Daily usage limit.</strong> Token costs are on me, so there&apos;s a cap per day.</li>
+              </ul>
+              <p className="mt-1.5 text-amber-700">
+                Want unlimited runs? Clone the{" "}
+                <a
+                  href="https://github.com/hippogriff-ai/talent-promo"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium underline hover:text-amber-900"
+                >
+                  GitHub repo
+                </a>{" "}
+                and use your own API key.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Hero Section with Input Form */}
       <section className="relative overflow-hidden">
         {/* Background decoration */}
@@ -231,7 +275,7 @@ export default function Home() {
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <div className="grid lg:grid-cols-2 gap-12 items-start pt-8">
             {/* Left side - Headlines */}
             <div>
               {/* Badge */}
@@ -262,7 +306,7 @@ export default function Home() {
                   <svg className="w-5 h-5 mr-2 text-green-500" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
-                  Free to use
+                  Free demo
                 </div>
                 <div className="flex items-center">
                   <svg className="w-5 h-5 mr-2 text-green-500" fill="currentColor" viewBox="0 0 20 20">
@@ -316,21 +360,6 @@ export default function Home() {
                 {/* Toggle */}
                 <div className="flex mb-3 bg-gray-100 rounded-lg p-1">
                   <button
-                    onClick={() => setInputMode("linkedin")}
-                    className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                      inputMode === "linkedin"
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
-                  >
-                    <span className="flex items-center justify-center">
-                      <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-                      </svg>
-                      LinkedIn URL
-                    </span>
-                  </button>
-                  <button
                     onClick={() => setInputMode("paste")}
                     className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                       inputMode === "paste"
@@ -345,42 +374,24 @@ export default function Home() {
                       Paste Resume
                     </span>
                   </button>
+                  <button
+                    onClick={() => setInputMode("linkedin")}
+                    className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                      inputMode === "linkedin"
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    <span className="flex items-center justify-center">
+                      <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                      </svg>
+                      LinkedIn URL
+                    </span>
+                  </button>
                 </div>
 
-                {inputMode === "linkedin" ? (
-                  <div className="relative">
-                    <input
-                      ref={linkedinInputRef}
-                      type="url"
-                      placeholder="https://linkedin.com/in/yourprofile"
-                      value={linkedinUrl}
-                      onChange={(e) => setLinkedinUrl(e.target.value)}
-                      onFocus={() => setShowLinkedinDropdown(recentLinkedin.length > 0)}
-                      onBlur={() => setTimeout(() => setShowLinkedinDropdown(false), 150)}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
-                    />
-                    {showLinkedinDropdown && recentLinkedin.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                        <div className="px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-50 border-b">
-                          Recent
-                        </div>
-                        {recentLinkedin.map((url, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => {
-                              setLinkedinUrl(url);
-                              setShowLinkedinDropdown(false);
-                            }}
-                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 truncate"
-                          >
-                            {url}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
+                {inputMode === "paste" ? (
                   <textarea
                     placeholder="Paste your resume text here..."
                     value={resumeText}
@@ -388,6 +399,47 @@ export default function Home() {
                     rows={4}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none"
                   />
+                ) : (
+                  <div>
+                    <div className="relative">
+                      <input
+                        ref={linkedinInputRef}
+                        type="url"
+                        placeholder="https://linkedin.com/in/yourprofile"
+                        value={linkedinUrl}
+                        onChange={(e) => setLinkedinUrl(e.target.value)}
+                        onFocus={() => setShowLinkedinDropdown(recentLinkedin.length > 0)}
+                        onBlur={() => setTimeout(() => setShowLinkedinDropdown(false), 150)}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                      />
+                      {showLinkedinDropdown && recentLinkedin.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-50 border-b">
+                            Recent
+                          </div>
+                          {recentLinkedin.map((url, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setLinkedinUrl(url);
+                                setShowLinkedinDropdown(false);
+                              }}
+                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 truncate"
+                            >
+                              {url}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <p className="mt-2 text-xs text-amber-600 flex items-center">
+                      <svg className="w-3.5 h-3.5 mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      LinkedIn blocks direct fetching. We&apos;ll search the web to find your profile.
+                    </p>
+                  </div>
                 )}
               </div>
 
@@ -690,7 +742,7 @@ export default function Home() {
               >
                 How It Works
               </button>
-              <span className="text-sm">Built with AI to help you present your best self</span>
+              <span className="text-sm">Demo by Vicki &middot; Data stays in your browser</span>
             </div>
           </div>
         </div>

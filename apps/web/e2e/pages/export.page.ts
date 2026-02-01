@@ -38,6 +38,7 @@ export class ExportPage {
   readonly reExportButton: Locator;
   readonly startNewButton: Locator;
   readonly completeButton: Locator;
+  readonly goBackToEditButton: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -72,6 +73,7 @@ export class ExportPage {
     this.reExportButton = page.getByRole('button', { name: /re-export|regenerate/i });
     this.startNewButton = page.getByRole('button', { name: /start new|new session/i });
     this.completeButton = page.getByRole('button', { name: /complete|done|finish/i });
+    this.goBackToEditButton = page.getByTestId('go-back-to-edit');
   }
 
   async waitForExportComplete(timeout = 60000) {

@@ -1,0 +1,232 @@
+{
+  "version": "2.0",
+  "description": "Silver dataset for evaluating discovery question quality - strength-first philosophy",
+  "samples": [
+    {
+      "id": "sample_001",
+      "description": "Senior engineer applying to staff role - bridge mentoring to leadership",
+      "input": {
+        "user_profile": {
+          "name": "Alex Chen",
+          "headline": "Senior Software Engineer",
+          "experience": [
+            {
+              "company": "TechCorp",
+              "position": "Senior Software Engineer",
+              "duration": "3 years",
+              "achievements": ["Built microservices", "Mentored juniors"]
+            }
+          ],
+          "skills": ["Python", "AWS", "Kubernetes"]
+        },
+        "job_posting": {
+          "title": "Staff Engineer",
+          "company": "BigTech Inc",
+          "requirements": ["Technical leadership", "Cross-team collaboration", "System design", "Mentoring"]
+        },
+        "gap_analysis": {
+          "gaps": ["No explicit technical leadership examples", "Missing cross-team impact", "No system design ownership examples"],
+          "strengths": ["Strong technical skills", "Mentoring experience", "Relevant tech stack"]
+        }
+      },
+      "expected_question_qualities": [
+        "Shows how mentoring IS leadership (bridge-building)",
+        "Frames microservices work as system design experience they already have",
+        "Helps them see cross-team impact they may not have highlighted",
+        "Makes them feel MORE qualified than they thought"
+      ],
+      "gold_question_examples": [
+        "Mentoring juniors at TechCorp is exactly the multiplier effect Staff roles need - when did teaching someone unlock something for your own understanding?",
+        "Building microservices means you've already done system design - what tradeoff did you make that you're secretly proud of, even if it seemed routine?",
+        "3 years at TechCorp means you've seen patterns others miss - when did your knowledge of the codebase save the team hours of debugging?"
+      ],
+      "anti_patterns": [
+        "You don't have formal leadership experience - tell me about any leadership you might have",
+        "Tell me about your cross-team collaboration experience",
+        "What system design ownership have you had?"
+      ]
+    },
+    {
+      "id": "sample_002",
+      "description": "Product manager pivoting to engineering - bridge technical PM work to coding",
+      "input": {
+        "user_profile": {
+          "name": "Jordan Smith",
+          "headline": "Product Manager",
+          "experience": [
+            {
+              "company": "StartupXYZ",
+              "position": "Product Manager",
+              "duration": "4 years",
+              "achievements": ["Launched mobile app", "Grew DAU 3x", "Led cross-functional team"]
+            }
+          ],
+          "skills": ["SQL", "Python basics", "Data analysis", "Product strategy"]
+        },
+        "job_posting": {
+          "title": "Software Engineer",
+          "company": "TechStartup",
+          "requirements": ["Python", "API development", "Problem solving", "Agile"]
+        },
+        "gap_analysis": {
+          "gaps": ["No professional engineering experience", "Limited coding portfolio", "No production code examples"],
+          "strengths": ["Technical PM background", "Data skills", "Problem solving", "Cross-functional leadership"]
+        }
+      },
+      "expected_question_qualities": [
+        "Shows how PM data work IS engineering-adjacent (bridge-building)",
+        "Frames their SQL/analysis as technical foundation they already have",
+        "Surfaces hidden coding they did but didn't highlight",
+        "Makes career change feel like natural progression, not a leap"
+      ],
+      "gold_question_examples": [
+        "Growing DAU 3x at StartupXYZ required data work - you probably wrote SQL queries that engineers later productionized. What analysis of yours became a feature?",
+        "Technical PMs often end up debugging with engineers - at StartupXYZ, did you ever find yourself in the code trying to understand why something wasn't working?",
+        "Leading cross-functional teams means you've translated between engineering and business - that's half of API design. When did you shape how a feature was built?"
+      ],
+      "anti_patterns": [
+        "You don't have engineering experience - do you have any coding experience?",
+        "Why do you want to switch to engineering?",
+        "What production code have you written?"
+      ]
+    },
+    {
+      "id": "sample_003",
+      "description": "Junior developer applying to mid-level - bridge agency variety to performance expertise",
+      "input": {
+        "user_profile": {
+          "name": "Sam Rivera",
+          "headline": "Software Developer",
+          "experience": [
+            {
+              "company": "AgencyWeb",
+              "position": "Junior Developer",
+              "duration": "2 years",
+              "achievements": ["Completed sprint tickets", "Fixed bugs", "Worked on client projects"]
+            }
+          ],
+          "skills": ["React", "Node.js", "Git", "CSS"]
+        },
+        "job_posting": {
+          "title": "Mid-Level Frontend Engineer",
+          "company": "ProductCo",
+          "requirements": ["3+ years experience", "Performance optimization", "Code review", "Technical decisions"]
+        },
+        "gap_analysis": {
+          "gaps": ["Experience level mismatch", "No performance optimization examples", "No technical leadership examples"],
+          "strengths": ["Relevant tech stack", "Agency experience = variety", "Client-facing skills"]
+        }
+      },
+      "expected_question_qualities": [
+        "Shows agency variety IS the adaptability mid-level roles need (bridge-building)",
+        "Reframes 'fixing bugs' as performance debugging they've already done",
+        "Helps them see client work as technical decision-making",
+        "Makes 2 years of dense agency work feel like equivalent experience"
+      ],
+      "gold_question_examples": [
+        "2 years at an agency means you've touched more codebases than most 5-year engineers - when did jumping into unfamiliar code stop feeling scary?",
+        "Fixing bugs at AgencyWeb is basically performance debugging - what's a bug that made you feel like a detective when you finally cracked it?",
+        "Client projects force fast technical decisions - at AgencyWeb, when did you push back on a client request because you saw a better way?"
+      ],
+      "anti_patterns": [
+        "You only have 2 years of experience - tell me about performance optimization you might have done",
+        "Describe your experience level compared to the requirements",
+        "What technical leadership have you had as a junior?"
+      ]
+    },
+    {
+      "id": "sample_004",
+      "description": "Backend engineer applying to full-stack - bridge API work to full-stack thinking",
+      "input": {
+        "user_profile": {
+          "name": "Morgan Lee",
+          "headline": "Backend Engineer",
+          "experience": [
+            {
+              "company": "DataCorp",
+              "position": "Backend Engineer",
+              "duration": "5 years",
+              "achievements": ["Built REST APIs", "Database optimization", "CI/CD pipelines"]
+            }
+          ],
+          "skills": ["Python", "PostgreSQL", "Docker", "AWS"]
+        },
+        "job_posting": {
+          "title": "Full Stack Engineer",
+          "company": "StartupIO",
+          "requirements": ["React", "Node.js", "API design", "Full product ownership"]
+        },
+        "gap_analysis": {
+          "gaps": ["No frontend experience listed", "No React/JavaScript projects", "No full-stack product ownership"],
+          "strengths": ["Strong API experience", "Database expertise", "DevOps skills"]
+        }
+      },
+      "expected_question_qualities": [
+        "Shows API design IS half of full-stack (bridge-building)",
+        "Surfaces frontend work they did but didn't list",
+        "Reframes backend expertise as full-product thinking they already have",
+        "Makes full-stack feel like a natural extension, not a gap"
+      ],
+      "gold_question_examples": [
+        "Building REST APIs at DataCorp means you already think about how consumers use your work - that's half of full-stack. Did you ever see frontend struggling with your design?",
+        "5 years of backend work means you've probably built admin panels or internal tools - any of those have UIs you built yourself?",
+        "Database optimization requires understanding the full request path - when did you trace a slow query all the way to the user experience?"
+      ],
+      "anti_patterns": [
+        "You don't have frontend experience - have you ever used React?",
+        "What full-stack projects have you worked on?",
+        "Do you have any JavaScript experience?"
+      ]
+    },
+    {
+      "id": "sample_005",
+      "description": "Bootcamp grad with career change - bridge nursing to tech skills",
+      "input": {
+        "user_profile": {
+          "name": "Casey Taylor",
+          "headline": "Software Developer",
+          "experience": [
+            {
+              "company": "Healthcare Inc",
+              "position": "Registered Nurse",
+              "duration": "6 years",
+              "achievements": ["Patient care", "Team coordination", "Emergency response"]
+            },
+            {
+              "company": "CodeCamp",
+              "position": "Bootcamp Graduate",
+              "duration": "6 months",
+              "achievements": ["Built capstone project", "Learned full stack development"]
+            }
+          ],
+          "skills": ["JavaScript", "React", "Node.js", "MongoDB"]
+        },
+        "job_posting": {
+          "title": "Junior Software Engineer",
+          "company": "HealthTech",
+          "requirements": ["JavaScript", "Problem solving", "Team collaboration", "Healthcare domain knowledge a plus"]
+        },
+        "gap_analysis": {
+          "gaps": ["No professional dev experience", "Career changer concerns", "Bootcamp stigma"],
+          "strengths": ["Healthcare domain expertise", "Team coordination", "Problem solving under pressure", "Recent technical training"]
+        }
+      },
+      "expected_question_qualities": [
+        "Shows nursing skills ARE tech skills (bridge-building)",
+        "Frames emergency response as incident debugging they already know",
+        "Healthcare domain is their ADVANTAGE, not something to overcome",
+        "Makes career change feel like bringing superpowers, not filling gaps"
+      ],
+      "gold_question_examples": [
+        "Managing patient handoffs in a hospital is basically incident response in tech - what made the difference between a smooth handoff and a dangerous one?",
+        "6 years of nursing means you've debugged symptoms to find root causes - when did your diagnosis prove everyone else wrong?",
+        "Healthcare at HealthTech is your superpower - what's something about patient workflows that engineers always get wrong?"
+      ],
+      "anti_patterns": [
+        "You don't have professional dev experience - why should we consider you?",
+        "Why are you switching careers from nursing?",
+        "How do you compare to candidates with CS degrees?"
+      ]
+    }
+  ]
+}

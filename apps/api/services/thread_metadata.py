@@ -1,16 +1,14 @@
-"""Thread Metadata Service for tracking workflow lifecycle.
+"""In-Memory Thread Metadata Service for tracking workflow lifecycle.
 
-This service manages the thread_metadata table which tracks:
+This service manages thread metadata in-memory:
 - Thread creation and access times
-- Thread expiration for cleanup
+- Thread expiration for cleanup (2 hours default)
 - Workflow status and step
 
-Used for:
-- Determining which threads to clean up
-- Tracking thread activity for TTL extension
-- Providing thread listing and filtering
+Privacy by design: All data is ephemeral and cleaned up automatically.
 """
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -18,88 +16,88 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Default TTL for threads (30 days)
-DEFAULT_TTL_DAYS = int(os.getenv("THREAD_TTL_DAYS", "30"))
+# Default TTL for threads (2 hours)
+DEFAULT_TTL_HOURS = float(os.getenv("THREAD_TTL_HOURS", "2"))
+
+
+class ThreadMetadata:
+    """In-memory thread metadata record."""
+
+    def __init__(
+        self,
+        thread_id: str,
+        workflow_step: str = "ingest",
+        user_id: Optional[str] = None,
+        ttl_hours: Optional[float] = None,
+    ):
+        now = datetime.now(timezone.utc)
+        ttl = ttl_hours or DEFAULT_TTL_HOURS
+
+        self.thread_id = thread_id
+        self.created_at = now
+        self.last_accessed_at = now
+        self.expires_at = now + timedelta(hours=ttl)
+        self.user_id = user_id
+        self.status = "active"
+        self.workflow_step = workflow_step
+        self.metadata: dict = {}
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "thread_id": self.thread_id,
+            "created_at": self.created_at.isoformat(),
+            "last_accessed_at": self.last_accessed_at.isoformat(),
+            "expires_at": self.expires_at.isoformat(),
+            "user_id": self.user_id,
+            "status": self.status,
+            "workflow_step": self.workflow_step,
+            "metadata": self.metadata,
+        }
 
 
 class ThreadMetadataService:
-    """Service for managing thread metadata in Postgres."""
+    """In-memory service for managing thread metadata with automatic cleanup."""
 
-    def __init__(self, database_url: Optional[str] = None):
-        """Initialize the service.
+    def __init__(self):
+        """Initialize the service with in-memory storage."""
+        self._threads: dict[str, ThreadMetadata] = {}
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_interval_seconds = 300  # Check every 5 minutes
+        logger.info(f"ThreadMetadataService initialized (TTL: {DEFAULT_TTL_HOURS}h)")
 
-        Args:
-            database_url: Postgres connection string. If None, uses DATABASE_URL env var.
-        """
-        self.database_url = database_url or os.getenv("DATABASE_URL")
-        self._connection = None
+    def start_cleanup_task(self):
+        """Start the background cleanup task."""
+        if self._cleanup_task is None or self._cleanup_task.done():
+            self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+            logger.info("Started thread cleanup background task")
 
-    def _get_connection(self):
-        """Get or create database connection."""
-        if not self.database_url:
-            logger.warning("No DATABASE_URL configured, thread metadata disabled")
-            return None
-
-        if self._connection is None or self._connection.closed:
+    async def _cleanup_loop(self):
+        """Background loop that cleans up expired threads."""
+        while True:
             try:
-                import psycopg2
-                self._connection = psycopg2.connect(self.database_url)
-            except ImportError:
-                logger.error("psycopg2 not installed, thread metadata disabled")
-                return None
+                await asyncio.sleep(self._cleanup_interval_seconds)
+                result = self.cleanup_expired_threads()
+                if result["deleted"] > 0:
+                    logger.info(f"Cleaned up {result['deleted']} expired threads")
+            except asyncio.CancelledError:
+                logger.info("Thread cleanup task cancelled")
+                break
             except Exception as e:
-                logger.error(f"Failed to connect to database: {e}")
-                return None
+                logger.error(f"Error in cleanup loop: {e}")
 
-        return self._connection
-
-    def ensure_table_exists(self) -> bool:
-        """Create the thread_metadata table if it doesn't exist.
-
-        Returns:
-            True if table exists or was created, False on error.
-        """
-        conn = self._get_connection()
-        if not conn:
-            return False
-
-        try:
-            cur = conn.cursor()
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS thread_metadata (
-                    thread_id TEXT PRIMARY KEY,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    last_accessed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    expires_at TIMESTAMP WITH TIME ZONE,
-                    user_id TEXT,
-                    status TEXT DEFAULT 'active',
-                    workflow_step TEXT,
-                    metadata JSONB DEFAULT '{}'
-                )
-            """)
-            cur.execute("""
-                CREATE INDEX IF NOT EXISTS idx_thread_metadata_expires
-                ON thread_metadata(expires_at)
-                WHERE status = 'active'
-            """)
-            cur.execute("""
-                CREATE INDEX IF NOT EXISTS idx_thread_metadata_last_accessed
-                ON thread_metadata(last_accessed_at)
-            """)
-            conn.commit()
-            cur.close()
-            return True
-        except Exception as e:
-            logger.error(f"Failed to create thread_metadata table: {e}")
-            conn.rollback()
-            return False
+    def stop_cleanup_task(self):
+        """Stop the background cleanup task."""
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            self._cleanup_task = None
 
     def create_thread(
         self,
         thread_id: str,
         workflow_step: str = "ingest",
         user_id: Optional[str] = None,
-        ttl_days: Optional[int] = None,
+        ttl_hours: Optional[float] = None,
     ) -> bool:
         """Create a new thread metadata record.
 
@@ -107,39 +105,22 @@ class ThreadMetadataService:
             thread_id: The workflow thread ID
             workflow_step: Initial workflow step (default: ingest)
             user_id: Optional user ID for multi-tenant support
-            ttl_days: Custom TTL in days (default: DEFAULT_TTL_DAYS)
+            ttl_hours: Custom TTL in hours (default: DEFAULT_TTL_HOURS)
 
         Returns:
-            True if created successfully, False on error.
+            True if created successfully.
         """
-        conn = self._get_connection()
-        if not conn:
-            return False
-
-        ttl = ttl_days or DEFAULT_TTL_DAYS
-        now = datetime.now(timezone.utc)
-        expires_at = now + timedelta(days=ttl)
-
         try:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO thread_metadata
-                    (thread_id, created_at, last_accessed_at, expires_at, user_id, status, workflow_step)
-                VALUES (%s, %s, %s, %s, %s, 'active', %s)
-                ON CONFLICT (thread_id) DO UPDATE SET
-                    last_accessed_at = EXCLUDED.last_accessed_at,
-                    workflow_step = EXCLUDED.workflow_step
-                """,
-                (thread_id, now, now, expires_at, user_id, workflow_step),
+            self._threads[thread_id] = ThreadMetadata(
+                thread_id=thread_id,
+                workflow_step=workflow_step,
+                user_id=user_id,
+                ttl_hours=ttl_hours,
             )
-            conn.commit()
-            cur.close()
-            logger.info(f"Created thread metadata for {thread_id}, expires {expires_at}")
+            logger.info(f"Created thread metadata for {thread_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to create thread metadata: {e}")
-            conn.rollback()
             return False
 
     def update_last_accessed(self, thread_id: str, workflow_step: Optional[str] = None) -> bool:
@@ -150,33 +131,16 @@ class ThreadMetadataService:
             workflow_step: Optional new workflow step
 
         Returns:
-            True if updated successfully, False on error.
+            True if updated successfully.
         """
-        conn = self._get_connection()
-        if not conn:
+        thread = self._threads.get(thread_id)
+        if not thread:
             return False
 
-        now = datetime.now(timezone.utc)
-
-        try:
-            cur = conn.cursor()
-            # Use COALESCE to only update workflow_step if a new value is provided
-            cur.execute(
-                """
-                UPDATE thread_metadata
-                SET last_accessed_at = %s,
-                    workflow_step = COALESCE(%s, workflow_step)
-                WHERE thread_id = %s
-                """,
-                (now, workflow_step, thread_id),
-            )
-            conn.commit()
-            cur.close()
-            return True
-        except Exception as e:
-            logger.error(f"Failed to update thread metadata: {e}")
-            conn.rollback()
-            return False
+        thread.last_accessed_at = datetime.now(timezone.utc)
+        if workflow_step:
+            thread.workflow_step = workflow_step
+        return True
 
     def update_status(self, thread_id: str, status: str) -> bool:
         """Update the status of a thread.
@@ -186,31 +150,15 @@ class ThreadMetadataService:
             status: New status (active, completed, expired)
 
         Returns:
-            True if updated successfully, False on error.
+            True if updated successfully.
         """
-        conn = self._get_connection()
-        if not conn:
+        thread = self._threads.get(thread_id)
+        if not thread:
             return False
 
-        now = datetime.now(timezone.utc)
-
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                UPDATE thread_metadata
-                SET status = %s, last_accessed_at = %s
-                WHERE thread_id = %s
-                """,
-                (status, now, thread_id),
-            )
-            conn.commit()
-            cur.close()
-            return True
-        except Exception as e:
-            logger.error(f"Failed to update thread status: {e}")
-            conn.rollback()
-            return False
+        thread.status = status
+        thread.last_accessed_at = datetime.now(timezone.utc)
+        return True
 
     def delete_thread(self, thread_id: str) -> bool:
         """Delete a thread metadata record.
@@ -219,25 +167,13 @@ class ThreadMetadataService:
             thread_id: The workflow thread ID
 
         Returns:
-            True if deleted successfully, False on error.
+            True if deleted successfully.
         """
-        conn = self._get_connection()
-        if not conn:
-            return False
-
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "DELETE FROM thread_metadata WHERE thread_id = %s",
-                (thread_id,),
-            )
-            conn.commit()
-            cur.close()
+        if thread_id in self._threads:
+            del self._threads[thread_id]
+            logger.info(f"Deleted thread metadata for {thread_id}")
             return True
-        except Exception as e:
-            logger.error(f"Failed to delete thread metadata: {e}")
-            conn.rollback()
-            return False
+        return False
 
     def get_thread(self, thread_id: str) -> Optional[dict]:
         """Get thread metadata by ID.
@@ -248,145 +184,57 @@ class ThreadMetadataService:
         Returns:
             Thread metadata dict or None if not found.
         """
-        conn = self._get_connection()
-        if not conn:
-            return None
+        thread = self._threads.get(thread_id)
+        return thread.to_dict() if thread else None
 
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT thread_id, created_at, last_accessed_at, expires_at,
-                       user_id, status, workflow_step, metadata
-                FROM thread_metadata
-                WHERE thread_id = %s
-                """,
-                (thread_id,),
-            )
-            row = cur.fetchone()
-            cur.close()
-
-            if row:
-                return {
-                    "thread_id": row[0],
-                    "created_at": row[1].isoformat() if row[1] else None,
-                    "last_accessed_at": row[2].isoformat() if row[2] else None,
-                    "expires_at": row[3].isoformat() if row[3] else None,
-                    "user_id": row[4],
-                    "status": row[5],
-                    "workflow_step": row[6],
-                    "metadata": row[7] or {},
-                }
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get thread metadata: {e}")
-            return None
-
-    def get_expired_threads(self, days_old: Optional[int] = None) -> list[str]:
+    def get_expired_threads(self, hours_old: Optional[float] = None) -> list[str]:
         """Get list of thread IDs that have expired.
 
         Args:
-            days_old: Override TTL - find threads not accessed in this many days
+            hours_old: Override TTL - find threads not accessed in this many hours
 
         Returns:
             List of expired thread IDs.
         """
-        conn = self._get_connection()
-        if not conn:
-            return []
+        now = datetime.now(timezone.utc)
+        expired = []
 
-        try:
-            cur = conn.cursor()
+        for thread_id, thread in self._threads.items():
+            if thread.status != "active":
+                continue
 
-            if days_old is not None:
-                # Find threads not accessed in X days
-                cutoff = datetime.now(timezone.utc) - timedelta(days=days_old)
-                cur.execute(
-                    """
-                    SELECT thread_id FROM thread_metadata
-                    WHERE last_accessed_at < %s AND status = 'active'
-                    """,
-                    (cutoff,),
-                )
+            if hours_old is not None:
+                cutoff = now - timedelta(hours=hours_old)
+                if thread.last_accessed_at < cutoff:
+                    expired.append(thread_id)
             else:
-                # Find threads past their expiration
-                cur.execute(
-                    """
-                    SELECT thread_id FROM thread_metadata
-                    WHERE expires_at < NOW() AND status = 'active'
-                    """
-                )
+                if thread.expires_at < now:
+                    expired.append(thread_id)
 
-            rows = cur.fetchall()
-            cur.close()
-            return [row[0] for row in rows]
-        except Exception as e:
-            logger.error(f"Failed to get expired threads: {e}")
-            return []
+        return expired
 
     def delete_checkpoint_data(self, thread_id: str) -> bool:
-        """Delete LangGraph checkpoint data for a thread.
-
-        This deletes from the LangGraph-managed tables:
-        - checkpoints
-        - checkpoint_writes
-        - checkpoint_blobs
+        """Delete checkpoint data for a thread (no-op for in-memory).
 
         Args:
             thread_id: The workflow thread ID
 
         Returns:
-            True if deleted successfully, False on error.
+            True (always succeeds for in-memory).
         """
-        conn = self._get_connection()
-        if not conn:
-            return False
+        # No-op for in-memory - checkpoint data is cleaned up with workflow
+        return True
 
-        # LangGraph checkpoint tables to clean (hardcoded for security)
-        CHECKPOINT_TABLES = ("checkpoint_blobs", "checkpoint_writes", "checkpoints")
-
-        try:
-            from psycopg2 import sql
-
-            cur = conn.cursor()
-
-            # Delete from all LangGraph checkpoint tables
-            # These tables may not exist if using MemorySaver, so we ignore errors
-            for table in CHECKPOINT_TABLES:
-                try:
-                    # Use psycopg2.sql for safe identifier quoting
-                    cur.execute(
-                        sql.SQL("DELETE FROM {} WHERE thread_id = %s").format(
-                            sql.Identifier(table)
-                        ),
-                        (thread_id,),
-                    )
-                except Exception as e:
-                    logger.debug(f"Could not delete from {table}: {e}")
-
-            conn.commit()
-            cur.close()
-            logger.info(f"Deleted checkpoint data for thread {thread_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete checkpoint data: {e}")
-            conn.rollback()
-            return False
-
-    def cleanup_expired_threads(self, days_old: Optional[int] = None) -> dict:
+    def cleanup_expired_threads(self, hours_old: Optional[float] = None) -> dict:
         """Clean up all expired threads.
 
-        This deletes:
-        - Thread metadata records
-        - LangGraph checkpoint data
-
         Args:
-            days_old: Override TTL - clean threads not accessed in this many days
+            hours_old: Override TTL - clean threads not accessed in this many hours
 
         Returns:
             Dict with cleanup stats: {"deleted": N, "errors": N, "thread_ids": [...]}
         """
-        expired_threads = self.get_expired_threads(days_old)
+        expired_threads = self.get_expired_threads(hours_old)
 
         if not expired_threads:
             return {"deleted": 0, "errors": 0, "thread_ids": []}
@@ -397,10 +245,6 @@ class ThreadMetadataService:
 
         for thread_id in expired_threads:
             try:
-                # Delete checkpoint data first
-                self.delete_checkpoint_data(thread_id)
-
-                # Then delete metadata
                 if self.delete_thread(thread_id):
                     deleted += 1
                     deleted_ids.append(thread_id)
@@ -413,11 +257,18 @@ class ThreadMetadataService:
         logger.info(f"Cleanup complete: deleted {deleted}, errors {errors}")
         return {"deleted": deleted, "errors": errors, "thread_ids": deleted_ids}
 
+    def get_all_threads(self) -> list[dict]:
+        """Get all thread metadata (for debugging/admin)."""
+        return [thread.to_dict() for thread in self._threads.values()]
+
+    def get_thread_count(self) -> int:
+        """Get total number of tracked threads."""
+        return len(self._threads)
+
     def close(self):
-        """Close the database connection."""
-        if self._connection and not self._connection.closed:
-            self._connection.close()
-            self._connection = None
+        """Stop cleanup task and clear data."""
+        self.stop_cleanup_task()
+        self._threads.clear()
 
 
 # Singleton instance for use across the application
@@ -429,5 +280,12 @@ def get_metadata_service() -> ThreadMetadataService:
     global _metadata_service
     if _metadata_service is None:
         _metadata_service = ThreadMetadataService()
-        _metadata_service.ensure_table_exists()
     return _metadata_service
+
+
+def reset_metadata_service():
+    """Reset singleton (for testing)."""
+    global _metadata_service
+    if _metadata_service:
+        _metadata_service.close()
+    _metadata_service = None

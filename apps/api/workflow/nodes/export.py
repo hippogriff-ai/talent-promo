@@ -30,6 +30,38 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 
+def _extract_contact_from_text(text: str) -> dict:
+    """Extract contact info from raw text using regex."""
+    if not text:
+        return {}
+
+    contact = {}
+
+    # Email
+    email_match = re.search(r'[\w\.\-\+]+@[\w\.\-]+\.\w+', text)
+    if email_match:
+        contact['email'] = email_match.group(0)
+
+    # Phone (various formats)
+    phone_match = re.search(r'[\+]?[\d\s\-\(\)\.]{10,20}', text[:1000])
+    if phone_match:
+        phone = re.sub(r'[^\d\+]', '', phone_match.group(0))
+        if len(phone) >= 10:
+            contact['phone'] = phone_match.group(0).strip()
+
+    # LinkedIn URL
+    linkedin_match = re.search(r'(?:linkedin\.com/in/|linkedin\.com/pub/)[\w\-]+', text, re.I)
+    if linkedin_match:
+        contact['linkedin_url'] = 'https://www.' + linkedin_match.group(0)
+
+    # Location (city, state pattern)
+    location_match = re.search(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?),?\s*([A-Z]{2})\b', text[:500])
+    if location_match:
+        contact['location'] = f"{location_match.group(1)}, {location_match.group(2)}"
+
+    return contact
+
+
 async def export_node(state: ResumeState) -> dict[str, Any]:
     """Export resume to multiple formats with ATS analysis.
 
@@ -59,9 +91,27 @@ async def export_node(state: ResumeState) -> dict[str, Any]:
             "updated_at": datetime.now().isoformat(),
         }
 
+    # Get raw text fields
+    profile_text = state.get("profile_text") or state.get("profile_markdown") or ""
+    job_text = state.get("job_text") or state.get("job_markdown") or ""
+
+    # Get metadata
+    profile_name = state.get("profile_name") or state.get("user_profile", {}).get("name", "Candidate")
+    job_title = state.get("job_title") or state.get("job_posting", {}).get("title", "Position")
+    job_company = state.get("job_company") or state.get("job_posting", {}).get("company_name", "Company")
+
     job_posting = state.get("job_posting", {})
     gap_analysis = state.get("gap_analysis", {})
     user_profile = state.get("user_profile", {})
+
+    # If using raw text extraction, supplement user_profile with regex-extracted contact info
+    if profile_text and not user_profile.get("email"):
+        extracted_contact = _extract_contact_from_text(profile_text)
+        user_profile = {**user_profile, **extracted_contact, "name": profile_name}
+
+    # Supplement job_posting with raw text metadata
+    if not job_posting.get("title"):
+        job_posting = {**job_posting, "title": job_title, "company_name": job_company}
 
     # Get keywords from job posting and gap analysis
     job_keywords = _extract_job_keywords(job_posting, gap_analysis)

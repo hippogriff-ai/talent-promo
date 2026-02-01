@@ -1,0 +1,246 @@
+[
+  {
+    "id": "sample_first_person",
+    "description": "User consistently adds first person pronouns",
+    "events": [
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "Led team of 5 engineers",
+          "after": "I led a team of 5 engineers",
+          "section": "experience",
+          "uses_first_person": true
+        },
+        "created_at": "2024-01-01T10:00:00Z"
+      },
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "Developed microservices architecture",
+          "after": "I developed a microservices architecture",
+          "section": "experience",
+          "uses_first_person": true
+        },
+        "created_at": "2024-01-01T10:05:00Z"
+      },
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "Managed product roadmap",
+          "after": "I managed the product roadmap",
+          "section": "experience",
+          "uses_first_person": true
+        },
+        "created_at": "2024-01-01T10:10:00Z"
+      }
+    ],
+    "expected_preferences": {
+      "first_person": true
+    }
+  },
+  {
+    "id": "sample_no_first_person",
+    "description": "User consistently removes first person pronouns",
+    "events": [
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "I led a team of 5 engineers",
+          "after": "Led team of 5 engineers",
+          "section": "experience",
+          "uses_first_person": false
+        },
+        "created_at": "2024-01-01T10:00:00Z"
+      },
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "I developed the backend system",
+          "after": "Developed backend system",
+          "section": "experience",
+          "uses_first_person": false
+        },
+        "created_at": "2024-01-01T10:05:00Z"
+      },
+      {
+        "event_type": "suggestion_accept",
+        "event_data": {
+          "location": "experience",
+          "original_text": "I managed",
+          "proposed_text": "Managed",
+          "prefers_action_verbs": true
+        },
+        "created_at": "2024-01-01T10:10:00Z"
+      }
+    ],
+    "expected_preferences": {
+      "first_person": false
+    }
+  },
+  {
+    "id": "sample_formal_tone",
+    "description": "User prefers formal tone, accepts formal suggestions",
+    "events": [
+      {
+        "event_type": "suggestion_accept",
+        "event_data": {
+          "location": "summary",
+          "original_text": "helped the company grow",
+          "proposed_text": "facilitated organizational growth",
+          "prefers_formal_tone": true
+        },
+        "created_at": "2024-01-01T10:00:00Z"
+      },
+      {
+        "event_type": "suggestion_accept",
+        "event_data": {
+          "location": "experience",
+          "original_text": "worked on improving performance",
+          "proposed_text": "executed performance optimization initiatives",
+          "prefers_formal_tone": true
+        },
+        "created_at": "2024-01-01T10:05:00Z"
+      },
+      {
+        "event_type": "suggestion_reject",
+        "event_data": {
+          "location": "experience",
+          "original_text": "Implemented new system",
+          "proposed_text": "Got the new system working",
+          "dislikes_conversational_tone": true
+        },
+        "created_at": "2024-01-01T10:10:00Z"
+      }
+    ],
+    "expected_preferences": {
+      "tone": "formal"
+    }
+  },
+  {
+    "id": "sample_heavy_metrics",
+    "description": "User consistently adds quantification",
+    "events": [
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "Improved system performance",
+          "after": "Improved system performance by 40%",
+          "section": "experience",
+          "uses_quantification": true
+        },
+        "created_at": "2024-01-01T10:00:00Z"
+      },
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "Led engineering team",
+          "after": "Led engineering team of 8 across 3 time zones",
+          "section": "experience",
+          "uses_quantification": true
+        },
+        "created_at": "2024-01-01T10:05:00Z"
+      },
+      {
+        "event_type": "suggestion_accept",
+        "event_data": {
+          "location": "experience",
+          "original_text": "Reduced deployment time",
+          "proposed_text": "Reduced deployment time by 60%, from 2 hours to 45 minutes",
+          "prefers_quantification": true
+        },
+        "created_at": "2024-01-01T10:10:00Z"
+      },
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "Saved costs",
+          "after": "Saved $500K annually through automation",
+          "section": "experience",
+          "uses_quantification": true
+        },
+        "created_at": "2024-01-01T10:15:00Z"
+      }
+    ],
+    "expected_preferences": {
+      "quantification_preference": "heavy_metrics"
+    }
+  },
+  {
+    "id": "sample_conversational_tone",
+    "description": "User prefers casual, conversational language",
+    "events": [
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "Executed strategic initiatives",
+          "after": "Worked on key projects",
+          "section": "experience"
+        },
+        "created_at": "2024-01-01T10:00:00Z"
+      },
+      {
+        "event_type": "suggestion_reject",
+        "event_data": {
+          "location": "summary",
+          "original_text": "software engineer",
+          "proposed_text": "results-driven software engineering professional",
+          "dislikes_formal_tone": true
+        },
+        "created_at": "2024-01-01T10:05:00Z"
+      },
+      {
+        "event_type": "suggestion_accept",
+        "event_data": {
+          "location": "experience",
+          "original_text": "Orchestrated cross-functional collaboration",
+          "proposed_text": "Worked closely with different teams",
+          "prefers_conversational_tone": true
+        },
+        "created_at": "2024-01-01T10:10:00Z"
+      }
+    ],
+    "expected_preferences": {
+      "tone": "conversational"
+    }
+  },
+  {
+    "id": "sample_mixed_signals",
+    "description": "User has mixed signals - should not learn preferences with low confidence",
+    "events": [
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "Led team",
+          "after": "I led team",
+          "section": "experience",
+          "uses_first_person": true
+        },
+        "created_at": "2024-01-01T10:00:00Z"
+      },
+      {
+        "event_type": "edit",
+        "event_data": {
+          "type": "text_change",
+          "before": "I managed project",
+          "after": "Managed project",
+          "section": "experience",
+          "uses_first_person": false
+        },
+        "created_at": "2024-01-01T10:05:00Z"
+      }
+    ],
+    "expected_preferences": {
+      "first_person": null
+    }
+  }
+]

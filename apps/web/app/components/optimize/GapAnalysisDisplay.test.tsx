@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import GapAnalysisDisplay from "./GapAnalysisDisplay";
 
 const mockGapAnalysis = {
@@ -109,6 +109,75 @@ describe("GapAnalysisDisplay", () => {
       expect(
         screen.getByText(/Discovery will help find opportunities/i)
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("Re-run Button", () => {
+    it("renders re-run button when onRerun is provided", () => {
+      const onRerun = vi.fn();
+      render(
+        <GapAnalysisDisplay gapAnalysis={mockGapAnalysis} onRerun={onRerun} />
+      );
+
+      expect(screen.getByText("Re-run Analysis")).toBeInTheDocument();
+    });
+
+    it("does not render re-run button when onRerun is not provided", () => {
+      render(<GapAnalysisDisplay gapAnalysis={mockGapAnalysis} />);
+
+      expect(screen.queryByText("Re-run Analysis")).not.toBeInTheDocument();
+    });
+
+    it("does not render re-run button in compact mode", () => {
+      const onRerun = vi.fn();
+      render(
+        <GapAnalysisDisplay
+          gapAnalysis={mockGapAnalysis}
+          onRerun={onRerun}
+          compact
+        />
+      );
+
+      expect(screen.queryByText("Re-run Analysis")).not.toBeInTheDocument();
+    });
+
+    it("calls onRerun when button is clicked", () => {
+      const onRerun = vi.fn();
+      render(
+        <GapAnalysisDisplay gapAnalysis={mockGapAnalysis} onRerun={onRerun} />
+      );
+
+      fireEvent.click(screen.getByText("Re-run Analysis"));
+
+      expect(onRerun).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows loading state when isRerunning is true", () => {
+      const onRerun = vi.fn();
+      render(
+        <GapAnalysisDisplay
+          gapAnalysis={mockGapAnalysis}
+          onRerun={onRerun}
+          isRerunning
+        />
+      );
+
+      expect(screen.getByText("Re-running...")).toBeInTheDocument();
+      expect(screen.queryByText("Re-run Analysis")).not.toBeInTheDocument();
+    });
+
+    it("disables button when isRerunning is true", () => {
+      const onRerun = vi.fn();
+      render(
+        <GapAnalysisDisplay
+          gapAnalysis={mockGapAnalysis}
+          onRerun={onRerun}
+          isRerunning
+        />
+      );
+
+      const button = screen.getByRole("button", { name: /Re-running/i });
+      expect(button).toBeDisabled();
     });
   });
 });

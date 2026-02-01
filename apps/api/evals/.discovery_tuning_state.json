@@ -1,0 +1,44 @@
+{
+  "baseline_score": 85.0,
+  "history": [
+    {
+      "timestamp": "2026-01-20T00:16:09.020846",
+      "iteration": 1,
+      "score": 85.0,
+      "suggestions": [
+        "Vary the opening frames beyond 'TechCorp X means Y' - try 'I bet at TechCorp...' or 'Building microservices for 3 years...' for more conversational flow",
+        "Add escape hatches to 1-2 questions like 'If nothing comes to mind, think about when your code prevented a problem...' for better agility",
+        "Add more specific achievements from their profile - reference the 'mobile app launch' or '3x DAU growth' directly to make questions feel more personalized",
+        "Shorten some questions by removing setup phrases - 'At StartupXYZ PM role - you were basically doing user acceptance testing' could be 'As StartupXYZ PM, you caught bugs in production - what edge case saved the team?'",
+        "Add escape hatches to prevent over-lingering: 'If debugging doesn't resonate, think about when clients questioned your code choices...'"
+      ],
+      "individual_scores": [
+        {
+          "sample": "sample_001",
+          "score": 82,
+          "reasoning": "These questions excel at reframing existing experience as leadership strengths, showing Alex their microservices work IS system design ownership. Strong executive coach voice that affirms current value while uncovering hidden achievements. Minor dock for repetitive 'TechCorp' framing and could be slightly more conversational."
+        },
+        {
+          "sample": "sample_002",
+          "score": 85,
+          "reasoning": "Excellent strength-to-gap bridge building - every question reframes PM experience as engineering-relevant rather than focusing on coding deficits. Questions are concise and conversational with natural flow, though could use more specific company context."
+        },
+        {
+          "sample": "sample_003",
+          "score": 88,
+          "reasoning": "Excellent strength-based framing that consistently reframes Sam's agency experience as valuable preparation for mid-level roles. Strong bridge-building between 'junior developer' tasks and senior requirements like performance optimization and technical leadership. Questions are concise and mentoring-focused, though some topics overlap slightly."
+        },
+        {
+          "sample": "sample_004",
+          "score": 82,
+          "reasoning": "Strong strength-based framing that connects backend API work to full-stack thinking. Questions effectively reframe DataCorp experience as already containing full-stack elements. Could be more concise and include clearer pivot points for conversational agility."
+        },
+        {
+          "sample": "sample_005",
+          "score": 88,
+          "reasoning": "Exceptional strength-to-gap bridging that reframes nursing skills as tech assets rather than focusing on lack of dev experience. Questions are concise and energizing, though some could benefit from clearer pivot points for conversational flow."
+        }
+      ]
+    }
+  ]
+}

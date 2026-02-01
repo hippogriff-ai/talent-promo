@@ -2,16 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import CompletionScreen from "./CompletionScreen";
 
-// Mock useAuth hook
-vi.mock("@/app/hooks/useAuth", () => ({
-  useAuth: () => ({
-    isAuthenticated: false,
-    user: null,
-    login: vi.fn(),
-    logout: vi.fn(),
-  }),
-}));
-
 // Mock localStorage
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -173,6 +163,50 @@ describe("CompletionScreen", () => {
       expect(
         screen.getByText("Ready to optimize for another job?")
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("Go Back to Edit", () => {
+    it("shows Edit Resume button when onGoBackToEdit is provided", () => {
+      const onGoBackToEdit = vi.fn();
+
+      render(
+        <CompletionScreen
+          downloads={mockDownloads}
+          onStartNew={vi.fn()}
+          onGoBackToEdit={onGoBackToEdit}
+        />
+      );
+
+      const editButton = screen.getByTestId("go-back-to-edit");
+      expect(editButton).toBeInTheDocument();
+      expect(editButton).toHaveTextContent("Edit Resume");
+    });
+
+    it("does not show Edit Resume button when onGoBackToEdit is not provided", () => {
+      render(
+        <CompletionScreen
+          downloads={mockDownloads}
+          onStartNew={vi.fn()}
+        />
+      );
+
+      expect(screen.queryByTestId("go-back-to-edit")).not.toBeInTheDocument();
+    });
+
+    it("calls onGoBackToEdit when button is clicked", () => {
+      const onGoBackToEdit = vi.fn();
+
+      render(
+        <CompletionScreen
+          downloads={mockDownloads}
+          onStartNew={vi.fn()}
+          onGoBackToEdit={onGoBackToEdit}
+        />
+      );
+
+      fireEvent.click(screen.getByTestId("go-back-to-edit"));
+      expect(onGoBackToEdit).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -24,7 +24,7 @@ os.environ.setdefault("EXA_API_KEY", "test-key")
 
 from main import app
 from routers.optimize import _workflows, _save_workflow_data, _get_workflow_data
-from services.thread_metadata import ThreadMetadataService, get_metadata_service
+from services.thread_metadata import ThreadMetadataService, get_metadata_service, reset_metadata_service
 
 
 client = TestClient(app)
@@ -55,7 +55,7 @@ def mock_workflow():
 def mock_old_workflow():
     """Create a mock workflow that appears old."""
     thread_id = "old-thread-456"
-    old_time = (datetime.now() - timedelta(days=45)).isoformat()
+    old_time = (datetime.now() - timedelta(hours=5)).isoformat()
     _save_workflow_data(thread_id, {
         "state": {"current_step": "completed"},
         "config": {"configurable": {"thread_id": thread_id}},
@@ -70,9 +70,17 @@ def mock_metadata_service():
     """Mock the metadata service for unit tests."""
     with patch("routers.optimize.get_metadata_service") as mock:
         service = MagicMock(spec=ThreadMetadataService)
-        service.database_url = "postgresql://test:test@localhost/test"
         mock.return_value = service
         yield service
+
+
+@pytest.fixture
+def fresh_metadata_service():
+    """Get a fresh in-memory metadata service for testing."""
+    reset_metadata_service()
+    service = get_metadata_service()
+    yield service
+    reset_metadata_service()
 
 
 # ============================================================================
@@ -80,11 +88,7 @@ def mock_metadata_service():
 # ============================================================================
 
 class TestThreadMetadataTracking:
-    """Tests for thread metadata creation and updates.
-
-    Note: These tests require full workflow mocking and are marked as integration tests.
-    They verify the metadata service is called correctly during workflow operations.
-    """
+    """Tests for thread metadata creation and updates."""
 
     @pytest.mark.skip(reason="Requires full workflow mocking - test in integration suite")
     def test_start_workflow_creates_metadata_record(self, mock_metadata_service):
@@ -93,8 +97,6 @@ class TestThreadMetadataTracking:
         WHEN: POST /api/optimize/start is called
         THEN: A thread_metadata record is created
         """
-        # This test verifies that metadata_service.create_thread is called
-        # when a new workflow is started via POST /api/optimize/start
         pass
 
     def test_status_check_updates_last_accessed_at(self, mock_workflow, mock_metadata_service):
@@ -145,11 +147,11 @@ class TestManualThreadDeletion:
         assert response.status_code == 200
         assert mock_workflow not in _workflows
 
-    def test_delete_calls_postgres_cleanup(self, mock_workflow, mock_metadata_service):
+    def test_delete_calls_cleanup_methods(self, mock_workflow, mock_metadata_service):
         """
-        GIVEN: A workflow with checkpoints in Postgres
+        GIVEN: A workflow with metadata
         WHEN: DELETE /api/optimize/{thread_id} is called
-        THEN: Postgres cleanup methods are called
+        THEN: Cleanup methods are called
         """
         response = client.delete(f"/api/optimize/{mock_workflow}")
 
@@ -220,6 +222,7 @@ class TestScheduledCleanup:
         WHEN: POST /api/optimize/cleanup is called
         THEN: 200 OK is returned
         """
+        mock_metadata_service.get_expired_threads.return_value = []
         mock_metadata_service.cleanup_expired_threads.return_value = {
             "deleted": 0,
             "errors": 0,
@@ -234,12 +237,13 @@ class TestScheduledCleanup:
 
         assert response.status_code == 200
 
-    def test_cleanup_respects_days_old_parameter(self, mock_metadata_service):
+    def test_cleanup_respects_hours_old_parameter(self, mock_metadata_service):
         """
-        GIVEN: A custom days_old parameter
+        GIVEN: A custom hours_old parameter
         WHEN: POST /api/optimize/cleanup is called
         THEN: The parameter is passed to cleanup service
         """
+        mock_metadata_service.get_expired_threads.return_value = []
         mock_metadata_service.cleanup_expired_threads.return_value = {
             "deleted": 0,
             "errors": 0,
@@ -249,11 +253,11 @@ class TestScheduledCleanup:
         with patch.dict(os.environ, {"CLEANUP_API_KEY": ""}):  # No key required
             response = client.post(
                 "/api/optimize/cleanup",
-                json={"days_old": 7}
+                json={"hours_old": 1.0}
             )
 
         assert response.status_code == 200
-        mock_metadata_service.cleanup_expired_threads.assert_called_once_with(days_old=7)
+        mock_metadata_service.cleanup_expired_threads.assert_called_once_with(hours_old=1.0)
 
     def test_cleanup_returns_accurate_counts(self, mock_metadata_service):
         """
@@ -261,6 +265,7 @@ class TestScheduledCleanup:
         WHEN: POST /api/optimize/cleanup is called
         THEN: Response shows accurate counts
         """
+        mock_metadata_service.get_expired_threads.return_value = ["t1", "t2", "t3", "t4", "t5"]
         mock_metadata_service.cleanup_expired_threads.return_value = {
             "deleted": 5,
             "errors": 1,
@@ -278,11 +283,10 @@ class TestScheduledCleanup:
 
     def test_cleanup_removes_from_memory_cache(self, mock_old_workflow, mock_metadata_service):
         """
-        GIVEN: Old threads in memory and Postgres
+        GIVEN: Old threads in memory
         WHEN: Cleanup runs
         THEN: Threads are removed from memory cache too
         """
-        # Mock get_expired_threads to return the thread IDs first
         mock_metadata_service.get_expired_threads.return_value = [mock_old_workflow]
         mock_metadata_service.cleanup_expired_threads.return_value = {
             "deleted": 1,
@@ -298,27 +302,6 @@ class TestScheduledCleanup:
         assert response.status_code == 200
         assert mock_old_workflow not in _workflows
 
-    def test_cleanup_handles_no_database(self, mock_old_workflow):
-        """
-        GIVEN: No database configured
-        WHEN: POST /api/optimize/cleanup is called
-        THEN: Memory-only cleanup runs
-        """
-        with patch("routers.optimize.get_metadata_service") as mock:
-            service = MagicMock()
-            service.database_url = None  # No database
-            mock.return_value = service
-
-            with patch.dict(os.environ, {"CLEANUP_API_KEY": ""}):
-                response = client.post(
-                    "/api/optimize/cleanup",
-                    json={"days_old": 30}
-                )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "memory-only" in data["message"].lower()
-
 
 # ============================================================================
 # 4. Recovery After Cleanup Tests
@@ -333,7 +316,6 @@ class TestRecoveryAfterCleanup:
         WHEN: Status is requested
         THEN: 404 is returned
         """
-        # Thread doesn't exist in memory or Postgres
         response = client.get("/api/optimize/status/cleaned-thread-id")
 
         assert response.status_code == 404
@@ -348,14 +330,14 @@ class TestEdgeCasesAndErrorHandling:
 
     def test_delete_handles_memory_only_thread(self, mock_workflow):
         """
-        GIVEN: A workflow only in memory (no Postgres)
+        GIVEN: A workflow only in memory
         WHEN: DELETE is called
-        THEN: Memory deletion succeeds, Postgres deletion gracefully handles missing
+        THEN: Memory deletion succeeds
         """
         with patch("routers.optimize.get_metadata_service") as mock:
             service = MagicMock()
-            service.delete_checkpoint_data.return_value = False
-            service.delete_thread.return_value = False
+            service.delete_checkpoint_data.return_value = True
+            service.delete_thread.return_value = True
             mock.return_value = service
 
             response = client.delete(f"/api/optimize/{mock_workflow}")
@@ -363,142 +345,141 @@ class TestEdgeCasesAndErrorHandling:
         assert response.status_code == 200
         assert mock_workflow not in _workflows
 
-    def test_cleanup_with_invalid_days_old(self, mock_metadata_service):
+    def test_cleanup_with_invalid_hours_old(self, mock_metadata_service):
         """
-        GIVEN: Invalid days_old parameter
+        GIVEN: Invalid hours_old parameter
         WHEN: POST /api/optimize/cleanup is called
         THEN: Validation error is returned
         """
         with patch.dict(os.environ, {"CLEANUP_API_KEY": ""}):
             response = client.post(
                 "/api/optimize/cleanup",
-                json={"days_old": 0}  # Invalid: must be >= 1
+                json={"hours_old": 0}  # Invalid: must be >= 0.5
             )
 
         assert response.status_code == 422  # Validation error
 
-    def test_cleanup_with_extreme_days_old(self, mock_metadata_service):
+    def test_cleanup_with_extreme_hours_old(self, mock_metadata_service):
         """
-        GIVEN: Very large days_old parameter
+        GIVEN: Very large hours_old parameter
         WHEN: POST /api/optimize/cleanup is called
         THEN: Validation caps at reasonable max
         """
         with patch.dict(os.environ, {"CLEANUP_API_KEY": ""}):
             response = client.post(
                 "/api/optimize/cleanup",
-                json={"days_old": 1000}  # Invalid: must be <= 365
+                json={"hours_old": 100}  # Invalid: must be <= 24
             )
 
         assert response.status_code == 422  # Validation error
 
 
 # ============================================================================
-# 6. ThreadMetadataService Unit Tests
+# 6. ThreadMetadataService Unit Tests (In-Memory)
 # ============================================================================
 
 class TestThreadMetadataServiceUnit:
-    """Unit tests for ThreadMetadataService class."""
+    """Unit tests for in-memory ThreadMetadataService class."""
 
-    def test_service_handles_missing_database_url(self):
+    def test_create_thread_succeeds(self, fresh_metadata_service):
         """
-        GIVEN: No DATABASE_URL configured
-        WHEN: Service is created
-        THEN: Operations return False/empty gracefully
-        """
-        with patch.dict(os.environ, {"DATABASE_URL": ""}, clear=False):
-            service = ThreadMetadataService(database_url=None)
-
-            assert service.create_thread("test") is False
-            assert service.update_last_accessed("test") is False
-            assert service.delete_thread("test") is False
-            assert service.get_expired_threads() == []
-
-    def test_service_calculates_correct_expiry(self):
-        """
-        GIVEN: A TTL of 30 days
+        GIVEN: A fresh service
         WHEN: Thread is created
-        THEN: expires_at is set correctly
+        THEN: Creation succeeds
         """
-        import psycopg2
-        with patch.object(psycopg2, "connect") as mock_connect:
-            mock_conn = MagicMock()
-            mock_cur = MagicMock()
-            mock_conn.cursor.return_value = mock_cur
-            mock_conn.closed = False
-            mock_connect.return_value = mock_conn
+        assert fresh_metadata_service.create_thread("test-thread") is True
 
-            service = ThreadMetadataService(database_url="postgresql://test")
-            service.create_thread("test-thread", ttl_days=30)
-
-            # Verify the INSERT was called with correct expiry
-            mock_cur.execute.assert_called()
-            call_args = mock_cur.execute.call_args[0]
-            # The expires_at should be approximately 30 days from now
-            # We can't check exact values due to timing, but verify query structure
-            assert "INSERT INTO thread_metadata" in call_args[0]
-
-
-# ============================================================================
-# Integration Tests (require actual Postgres)
-# ============================================================================
-
-@pytest.mark.skipif(
-    not os.getenv("DATABASE_URL"),
-    reason="DATABASE_URL not set - skipping integration tests"
-)
-class TestPostgresIntegration:
-    """Integration tests that require actual Postgres connection."""
-
-    @pytest.fixture(autouse=True)
-    def setup_service(self):
-        """Setup and teardown for integration tests."""
-        self.service = ThreadMetadataService()
-        self.service.ensure_table_exists()
-        self.test_threads = []
-        yield
-        # Cleanup test threads
-        for thread_id in self.test_threads:
-            self.service.delete_thread(thread_id)
-        self.service.close()
-
-    def test_full_lifecycle_create_update_delete(self):
+    def test_get_thread_returns_correct_data(self, fresh_metadata_service):
         """
-        GIVEN: Postgres is available
-        WHEN: Full thread lifecycle is executed
-        THEN: All operations succeed
+        GIVEN: A created thread
+        WHEN: Thread is retrieved
+        THEN: Correct data is returned
         """
-        thread_id = f"integration-test-{datetime.now().timestamp()}"
-        self.test_threads.append(thread_id)
+        fresh_metadata_service.create_thread("test-thread", workflow_step="ingest")
 
-        # Create
-        assert self.service.create_thread(thread_id, workflow_step="ingest")
+        metadata = fresh_metadata_service.get_thread("test-thread")
 
-        # Read
-        metadata = self.service.get_thread(thread_id)
         assert metadata is not None
-        assert metadata["thread_id"] == thread_id
+        assert metadata["thread_id"] == "test-thread"
+        assert metadata["workflow_step"] == "ingest"
         assert metadata["status"] == "active"
 
-        # Update
-        assert self.service.update_last_accessed(thread_id, workflow_step="research")
+    def test_update_last_accessed_updates_timestamp(self, fresh_metadata_service):
+        """
+        GIVEN: A created thread
+        WHEN: last_accessed is updated
+        THEN: Timestamp is updated
+        """
+        fresh_metadata_service.create_thread("test-thread")
 
-        # Verify update
-        metadata = self.service.get_thread(thread_id)
+        import time
+        time.sleep(0.01)  # Small delay to ensure timestamp difference
+
+        fresh_metadata_service.update_last_accessed("test-thread", workflow_step="research")
+
+        metadata = fresh_metadata_service.get_thread("test-thread")
         assert metadata["workflow_step"] == "research"
 
-        # Delete
-        assert self.service.delete_thread(thread_id)
-        self.test_threads.remove(thread_id)
-
-        # Verify deleted
-        assert self.service.get_thread(thread_id) is None
-
-    def test_cleanup_removes_old_threads(self):
+    def test_delete_thread_removes_from_storage(self, fresh_metadata_service):
         """
-        GIVEN: Old threads in database
+        GIVEN: A created thread
+        WHEN: Thread is deleted
+        THEN: Thread is no longer retrievable
+        """
+        fresh_metadata_service.create_thread("test-thread")
+        assert fresh_metadata_service.delete_thread("test-thread") is True
+        assert fresh_metadata_service.get_thread("test-thread") is None
+
+    def test_get_expired_threads_returns_old_threads(self, fresh_metadata_service):
+        """
+        GIVEN: Threads with different ages
+        WHEN: get_expired_threads is called
+        THEN: Only old threads are returned
+        """
+        # Create a thread and manually set its last_accessed to be old
+        fresh_metadata_service.create_thread("old-thread")
+        thread = fresh_metadata_service._threads["old-thread"]
+        thread.last_accessed_at = datetime.now(timezone.utc) - timedelta(hours=5)
+
+        fresh_metadata_service.create_thread("new-thread")
+
+        # Get threads older than 1 hour
+        expired = fresh_metadata_service.get_expired_threads(hours_old=1.0)
+
+        assert "old-thread" in expired
+        assert "new-thread" not in expired
+
+    def test_cleanup_expired_threads_removes_old(self, fresh_metadata_service):
+        """
+        GIVEN: Old threads
         WHEN: cleanup_expired_threads is called
         THEN: Old threads are removed
         """
-        # This test would require manipulating timestamps
-        # which is complex in a real database test
-        pass
+        # Create and age a thread
+        fresh_metadata_service.create_thread("old-thread")
+        thread = fresh_metadata_service._threads["old-thread"]
+        thread.last_accessed_at = datetime.now(timezone.utc) - timedelta(hours=5)
+        thread.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+
+        result = fresh_metadata_service.cleanup_expired_threads()
+
+        assert result["deleted"] == 1
+        assert "old-thread" in result["thread_ids"]
+        assert fresh_metadata_service.get_thread("old-thread") is None
+
+    def test_service_calculates_correct_expiry(self, fresh_metadata_service):
+        """
+        GIVEN: A TTL of 2 hours
+        WHEN: Thread is created
+        THEN: expires_at is set correctly
+        """
+        fresh_metadata_service.create_thread("test-thread", ttl_hours=2.0)
+
+        metadata = fresh_metadata_service.get_thread("test-thread")
+        created_at = datetime.fromisoformat(metadata["created_at"])
+        expires_at = datetime.fromisoformat(metadata["expires_at"])
+
+        # Should expire approximately 2 hours after creation
+        expected_expiry = created_at + timedelta(hours=2)
+        diff = abs((expires_at - expected_expiry).total_seconds())
+        assert diff < 1  # Within 1 second tolerance

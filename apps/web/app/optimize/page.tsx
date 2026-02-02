@@ -12,7 +12,7 @@ import WorkflowStepper from "../components/optimize/WorkflowStepper";
 import SessionRecoveryModal from "../components/optimize/SessionRecoveryModal";
 import StartNewSessionDialog from "../components/optimize/StartNewSessionDialog";
 import ErrorRecovery from "../components/optimize/ErrorRecovery";
-import ResearchStep from "../components/optimize/ResearchStep";
+import ResearchStep, { ResearchModal } from "../components/optimize/ResearchStep";
 import { ProfileEditorModal } from "../components/optimize/ProfileEditorModal";
 import DiscoveryStep from "../components/optimize/DiscoveryStep";
 import QAChat from "../components/optimize/QAChat";
@@ -75,6 +75,7 @@ export default function OptimizePage() {
 
   // Stage navigation - for viewing completed stages (read-only review mode)
   const [viewingStage, setViewingStage] = useState<WorkflowStage | null>(null);
+  const [researchReviewModalOpen, setResearchReviewModalOpen] = useState(false);
 
   // Modal states for viewing profile and job markdown
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -620,6 +621,73 @@ export default function OptimizePage() {
               )}
             </div>
 
+            {/* Research Insights (completed stage review) */}
+            {workflow.data.research && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                    <svg className="w-5 h-5 mr-2 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    Research Insights
+                  </h3>
+                  <button
+                    onClick={() => setResearchReviewModalOpen(true)}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
+                  >
+                    Show More
+                    <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {workflow.data.research.company_overview && (
+                    <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
+                      <p className="text-sm font-medium text-blue-800 mb-1">Company Overview</p>
+                      <p className="text-sm text-blue-700">{workflow.data.research.company_overview}</p>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {workflow.data.research.company_culture && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 mb-1">Company Culture</p>
+                        <p className="text-sm text-gray-600">{workflow.data.research.company_culture}</p>
+                      </div>
+                    )}
+                    {workflow.data.research.company_values && workflow.data.research.company_values.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 mb-2">Company Values</p>
+                        <div className="flex flex-wrap gap-1">
+                          {workflow.data.research.company_values.map((v, idx) => (
+                            <span key={idx} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">{v}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {workflow.data.research.similar_profiles && workflow.data.research.similar_profiles.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-2">Similar Profiles</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {workflow.data.research.similar_profiles.slice(0, 3).map((p, idx) => (
+                          <div key={idx} className="text-sm border-l-2 border-blue-300 pl-3 py-1">
+                            <p className="font-medium text-gray-800">{p.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{p.headline}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-xs text-center">
+                    <button onClick={() => setResearchReviewModalOpen(true)} className="text-blue-600 hover:text-blue-800 font-medium">
+                      View full research report →
+                    </button>
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Gap Analysis */}
             {workflow.data.gapAnalysis && (
               <div className="bg-white rounded-lg shadow p-6">
@@ -979,31 +1047,163 @@ export default function OptimizePage() {
           {/* Research Insights */}
           {workflow.data.research && (
             <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                <svg className="w-5 h-5 mr-2 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                Research Insights
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {workflow.data.research.company_culture && (
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 mb-1">Company Culture</p>
-                    <p className="text-sm text-gray-600">{workflow.data.research.company_culture}</p>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                  <svg className="w-5 h-5 mr-2 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  Research Insights
+                </h3>
+                <button
+                  onClick={() => setResearchReviewModalOpen(true)}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
+                >
+                  Show More
+                  <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Company Overview */}
+                {workflow.data.research.company_overview && (
+                  <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
+                    <p className="text-sm font-medium text-blue-800 mb-1">Company Overview</p>
+                    <p className="text-sm text-blue-700">{workflow.data.research.company_overview}</p>
                   </div>
                 )}
-                {workflow.data.research.company_values && workflow.data.research.company_values.length > 0 && (
+
+                {/* Culture + Values row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {workflow.data.research.company_culture && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-1">Company Culture</p>
+                      <p className="text-sm text-gray-600">{workflow.data.research.company_culture}</p>
+                    </div>
+                  )}
+                  {workflow.data.research.company_values && workflow.data.research.company_values.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-2">Company Values</p>
+                      <div className="flex flex-wrap gap-1">
+                        {workflow.data.research.company_values.map((v, idx) => (
+                          <span key={idx} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">{v}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tech Stack */}
+                {workflow.data.research.tech_stack_details && workflow.data.research.tech_stack_details.length > 0 && (
                   <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">Company Values</p>
-                    <div className="flex flex-wrap gap-1">
-                      {workflow.data.research.company_values.map((v, idx) => (
-                        <span key={idx} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">{v}</span>
+                    <p className="text-sm font-medium text-gray-700 mb-2">Tech Stack</p>
+                    <div className="flex flex-wrap gap-2">
+                      {workflow.data.research.tech_stack_details.slice(0, 8).map((tech, idx) => (
+                        <span key={idx} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded border border-gray-200">
+                          {tech.technology}
+                        </span>
+                      ))}
+                      {workflow.data.research.tech_stack_details.length > 8 && (
+                        <button onClick={() => setResearchReviewModalOpen(true)} className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800">
+                          +{workflow.data.research.tech_stack_details.length - 8} more
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Similar Profiles */}
+                {workflow.data.research.similar_profiles && workflow.data.research.similar_profiles.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">Similar Profiles at Company</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {workflow.data.research.similar_profiles.slice(0, 4).map((p, idx) => (
+                        <div key={idx} className="text-sm border-l-2 border-blue-300 pl-3 py-1">
+                          <p className="font-medium text-gray-800">{p.name}</p>
+                          <p className="text-xs text-gray-500 truncate">{p.headline}</p>
+                        </div>
                       ))}
                     </div>
                   </div>
                 )}
+
+                {/* Hiring Patterns + Company News */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {workflow.data.research.hiring_patterns && (
+                    <div className="bg-amber-50/50 p-3 rounded-lg border border-amber-100">
+                      <p className="text-sm font-medium text-amber-800 mb-1">Hiring Patterns</p>
+                      <p className="text-xs text-amber-700">{workflow.data.research.hiring_patterns}</p>
+                    </div>
+                  )}
+                  {workflow.data.research.company_news && workflow.data.research.company_news.length > 0 && (
+                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                      <p className="text-sm font-medium text-gray-700 mb-2">Recent News</p>
+                      <ul className="text-xs text-gray-600 space-y-1">
+                        {workflow.data.research.company_news.slice(0, 3).map((news, idx) => (
+                          <li key={idx} className="flex items-start">
+                            <span className="text-gray-400 mr-1.5">•</span>
+                            <span className="line-clamp-2">{news}</span>
+                          </li>
+                        ))}
+                        {workflow.data.research.company_news.length > 3 && (
+                          <li>
+                            <button onClick={() => setResearchReviewModalOpen(true)} className="text-blue-600 hover:text-blue-800 ml-3">
+                              +{workflow.data.research.company_news.length - 3} more
+                            </button>
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                {/* Hiring Criteria + Ideal Profile previews */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {workflow.data.research.hiring_criteria && (
+                    <div className="bg-amber-50/50 p-3 rounded-lg border border-amber-200">
+                      <p className="text-sm font-medium text-amber-800 mb-1">Hiring Criteria</p>
+                      {workflow.data.research.hiring_criteria.must_haves && workflow.data.research.hiring_criteria.must_haves.length > 0 && (
+                        <ul className="text-xs text-gray-600 space-y-0.5">
+                          {workflow.data.research.hiring_criteria.must_haves.slice(0, 3).map((item, idx) => (
+                            <li key={idx} className="flex items-start">
+                              <span className="text-red-400 mr-1">•</span>
+                              <span className="line-clamp-1">{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <button onClick={() => setResearchReviewModalOpen(true)} className="text-xs text-blue-600 hover:text-blue-800 mt-1">
+                        View full criteria →
+                      </button>
+                    </div>
+                  )}
+                  {workflow.data.research.ideal_profile && (
+                    <div className="bg-green-50/50 p-3 rounded-lg border border-green-200">
+                      <p className="text-sm font-medium text-green-800 mb-1">Ideal Profile</p>
+                      {workflow.data.research.ideal_profile.headline && (
+                        <p className="text-xs text-gray-700 bg-white rounded px-2 py-1 border border-green-100 line-clamp-2">
+                          {workflow.data.research.ideal_profile.headline}
+                        </p>
+                      )}
+                      <button onClick={() => setResearchReviewModalOpen(true)} className="text-xs text-blue-600 hover:text-blue-800 mt-1">
+                        View full profile →
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
+          )}
+
+          {/* Research Review Modal */}
+          {workflow.data.research && (
+            <ResearchModal
+              isOpen={researchReviewModalOpen}
+              onClose={() => setResearchReviewModalOpen(false)}
+              research={workflow.data.research}
+              gapAnalysis={workflow.data.gapAnalysis}
+            />
           )}
 
           {/* Continue Button */}
@@ -1166,6 +1366,7 @@ export default function OptimizePage() {
             discoveryAgenda={workflow.data.discoveryAgenda}
             pendingQuestion={workflow.pendingQuestion}
             onSubmitAnswer={workflow.submitAnswer}
+            research={workflow.data.research}
             interruptPayload={workflow.interruptPayload as {
               message?: string;
               context?: {

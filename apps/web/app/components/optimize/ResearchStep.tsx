@@ -8,6 +8,14 @@ import {
   GapAnalysis,
   WorkflowStep,
 } from "../../hooks/useWorkflow";
+
+/** Map LLM importance values ("critical"/"important"/"nice-to-have") to display styles */
+function importanceStyle(importance: string | undefined) {
+  const v = (importance || "").toLowerCase();
+  if (v === "critical" || v === "high") return { bg: "bg-red-100 text-red-700", badge: "bg-red-200 text-red-700", border: "bg-red-50 border border-red-200", label: v };
+  if (v === "important" || v === "medium") return { bg: "bg-yellow-100 text-yellow-700", badge: "bg-yellow-200 text-yellow-700", border: "bg-yellow-50 border border-yellow-200", label: v };
+  return { bg: "bg-gray-100 text-gray-600", badge: "bg-gray-200 text-gray-600", border: "bg-gray-50 border border-gray-200", label: v };
+}
 import { ProfileEditorModal } from "./ProfileEditorModal";
 
 interface ProgressMessage {
@@ -57,7 +65,7 @@ interface ResearchStepProps {
 }
 
 // Full research view for modal
-function ResearchFullView({ research }: { research: ResearchFindings }) {
+export function ResearchFullView({ research, gapAnalysis }: { research: ResearchFindings; gapAnalysis?: GapAnalysis | null }) {
   return (
     <div className="space-y-6">
       {/* Company Overview */}
@@ -103,12 +111,8 @@ function ResearchFullView({ research }: { research: ResearchFindings }) {
                 <div className="flex items-center justify-between">
                   <span className="font-medium text-gray-900">{tech.technology}</span>
                   {tech.importance && (
-                    <span className={`px-2 py-0.5 text-xs rounded ${
-                      tech.importance === 'high' ? 'bg-red-100 text-red-700' :
-                      tech.importance === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-gray-100 text-gray-600'
-                    }`}>
-                      {tech.importance} importance
+                    <span className={`px-2 py-0.5 text-xs rounded ${importanceStyle(tech.importance).bg}`}>
+                      {tech.importance}
                     </span>
                   )}
                 </div>
@@ -339,19 +343,122 @@ function ResearchFullView({ research }: { research: ResearchFindings }) {
           )}
         </div>
       )}
+
+      {/* === Gap Analysis Details === */}
+      {gapAnalysis && (
+        <>
+          <hr className="border-gray-200" />
+          <h4 className="text-base font-semibold text-gray-900 flex items-center">
+            <svg className="w-5 h-5 mr-2 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            Gap Analysis
+          </h4>
+
+          {/* Strengths */}
+          {gapAnalysis.strengths && gapAnalysis.strengths.length > 0 && (
+            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+              <h5 className="font-semibold text-green-800 mb-2">Strengths ({gapAnalysis.strengths.length})</h5>
+              <ul className="text-sm text-gray-700 space-y-2">
+                {gapAnalysis.strengths.map((s, idx) => (
+                  <li key={idx} className="flex items-start">
+                    <span className="text-green-500 mr-2 mt-0.5 flex-shrink-0">✓</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Gaps */}
+          {gapAnalysis.gaps && gapAnalysis.gaps.length > 0 && (
+            <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+              <h5 className="font-semibold text-amber-800 mb-2">Gaps to Address ({gapAnalysis.gaps.length})</h5>
+              <ul className="text-sm text-gray-700 space-y-2">
+                {gapAnalysis.gaps.map((g, idx) => (
+                  <li key={idx} className="flex items-start">
+                    <span className="text-amber-500 mr-2 mt-0.5 flex-shrink-0">!</span>
+                    <span>{g}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Recommended Emphasis */}
+          {gapAnalysis.recommended_emphasis && gapAnalysis.recommended_emphasis.length > 0 && (
+            <div>
+              <h5 className="font-semibold text-gray-800 mb-2">Recommended Emphasis</h5>
+              <ul className="text-sm text-gray-600 space-y-2">
+                {gapAnalysis.recommended_emphasis.map((item, idx) => (
+                  <li key={idx} className="flex items-start bg-blue-50 rounded-lg p-3 border border-blue-100">
+                    <span className="text-blue-500 mr-2 mt-0.5 flex-shrink-0 font-bold">{idx + 1}.</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Transferable Skills */}
+          {gapAnalysis.transferable_skills && gapAnalysis.transferable_skills.length > 0 && (
+            <div>
+              <h5 className="font-semibold text-gray-800 mb-2">Transferable Skills</h5>
+              <ul className="text-sm text-gray-600 space-y-2">
+                {gapAnalysis.transferable_skills.map((skill, idx) => (
+                  <li key={idx} className="flex items-start">
+                    <span className="text-indigo-500 mr-2 mt-0.5 flex-shrink-0">→</span>
+                    <span>{skill}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Keywords to Include */}
+          {gapAnalysis.keywords_to_include && gapAnalysis.keywords_to_include.length > 0 && (
+            <div>
+              <h5 className="font-semibold text-gray-800 mb-2">Keywords to Include ({gapAnalysis.keywords_to_include.length})</h5>
+              <div className="flex flex-wrap gap-2">
+                {gapAnalysis.keywords_to_include.map((kw, idx) => (
+                  <span key={idx} className="px-3 py-1 bg-indigo-100 text-indigo-700 text-sm rounded-full">
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Potential Concerns */}
+          {gapAnalysis.potential_concerns && gapAnalysis.potential_concerns.length > 0 && (
+            <div>
+              <h5 className="font-semibold text-gray-800 mb-2">Potential Concerns &amp; How to Address</h5>
+              <div className="space-y-2">
+                {gapAnalysis.potential_concerns.map((concern, idx) => (
+                  <div key={idx} className="bg-orange-50 rounded-lg p-3 border border-orange-200 text-sm text-gray-700">
+                    {concern}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
 // Research modal component
-function ResearchModal({
+export function ResearchModal({
   isOpen,
   onClose,
   research,
+  gapAnalysis,
 }: {
   isOpen: boolean;
   onClose: () => void;
   research: ResearchFindings | null;
+  gapAnalysis?: GapAnalysis | null;
 }) {
   if (!isOpen || !research) return null;
 
@@ -386,7 +493,7 @@ function ResearchModal({
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            <ResearchFullView research={research} />
+            <ResearchFullView research={research} gapAnalysis={gapAnalysis} />
           </div>
 
           {/* Footer */}
@@ -868,34 +975,25 @@ export default function ResearchStep({
               <div>
                 <p className="text-sm font-medium text-gray-700 mb-2">Tech Stack</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {research.tech_stack_details.slice(0, 8).map((tech, idx) => (
+                  {research.tech_stack_details.slice(0, 8).map((tech, idx) => {
+                    const style = importanceStyle(tech.importance);
+                    return (
                     <div
                       key={idx}
-                      className={`px-3 py-2 text-xs rounded-lg ${
-                        tech.importance === 'high' ? 'bg-red-50 border border-red-200' :
-                        tech.importance === 'medium' ? 'bg-yellow-50 border border-yellow-200' :
-                        'bg-gray-50 border border-gray-200'
-                      }`}
+                      className={`px-3 py-2 text-xs rounded-lg ${style.border}`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className={`font-medium ${
-                          tech.importance === 'high' ? 'text-red-700' :
-                          tech.importance === 'medium' ? 'text-yellow-700' :
-                          'text-gray-700'
-                        }`}>{tech.technology}</span>
+                        <span className={`font-medium ${style.bg.split(' ')[1] || 'text-gray-700'}`}>{tech.technology}</span>
                         {tech.importance && (
-                          <span className={`px-1.5 py-0.5 text-[10px] rounded ${
-                            tech.importance === 'high' ? 'bg-red-200 text-red-700' :
-                            tech.importance === 'medium' ? 'bg-yellow-200 text-yellow-700' :
-                            'bg-gray-200 text-gray-600'
-                          }`}>{tech.importance}</span>
+                          <span className={`px-1.5 py-0.5 text-[10px] rounded ${style.badge}`}>{tech.importance}</span>
                         )}
                       </div>
                       {tech.usage && (
                         <p className="text-gray-500 mt-1 line-clamp-2">{tech.usage}</p>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {research.tech_stack_details.length > 8 && (
                   <button
@@ -1120,6 +1218,7 @@ export default function ResearchStep({
         isOpen={researchModalOpen}
         onClose={() => setResearchModalOpen(false)}
         research={research}
+        gapAnalysis={gapAnalysis}
       />
 
       {/* Gap Analysis */}

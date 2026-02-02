@@ -3,11 +3,13 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   GapAnalysis,
+  ResearchFindings,
   DiscoveryPrompt as BackendDiscoveryPrompt,
   DiscoveryMessage as BackendDiscoveryMessage,
   DiscoveredExperience as BackendDiscoveredExperience,
   DiscoveryAgenda as BackendDiscoveryAgenda,
 } from "../../hooks/useWorkflow";
+import { ResearchModal } from "./ResearchStep";
 import {
   useDiscoveryStorage,
   DiscoveryPrompt,
@@ -51,6 +53,8 @@ interface DiscoveryStepProps {
       };
     };
   } | null;
+  // Research data for "View Research Report" modal
+  research?: ResearchFindings | null;
   // Markdown content for gap analysis rerun
   profileMarkdown?: string | null;
   jobMarkdown?: string | null;
@@ -79,6 +83,7 @@ export default function DiscoveryStep({
   pendingQuestion,
   onSubmitAnswer,
   interruptPayload,
+  research,
   profileMarkdown,
   jobMarkdown,
   onDiscoveryDone,
@@ -87,6 +92,7 @@ export default function DiscoveryStep({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
   const [isRerunningGapAnalysis, setIsRerunningGapAnalysis] = useState(false);
+  const [researchModalOpen, setResearchModalOpen] = useState(false);
 
   // Convert backend data to frontend format - memoized to prevent infinite re-renders
   const messages = useMemo(() => discoveryMessages.map((m) => ({
@@ -326,13 +332,39 @@ export default function DiscoveryStep({
 
   return (
     <div className="space-y-6">
-      {/* Gap Analysis Overview */}
+      {/* Research Report + Gap Analysis Overview */}
       {gapAnalysis && (
-        <GapAnalysisDisplay
-          gapAnalysis={gapAnalysis}
-          onRerun={handleRerunGapAnalysis}
-          isRerunning={isRerunningGapAnalysis}
-        />
+        <div className="space-y-4">
+          {/* View Research Report Button */}
+          {research && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-blue-800">Research Report Available</p>
+                  <p className="text-xs text-blue-600">Company overview, culture, tech stack, hiring criteria, and more</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setResearchModalOpen(true)}
+                className="px-4 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors flex items-center"
+              >
+                View Full Research Report
+                <svg className="w-4 h-4 ml-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          <GapAnalysisDisplay
+            gapAnalysis={gapAnalysis}
+            onRerun={handleRerunGapAnalysis}
+            isRerunning={isRerunningGapAnalysis}
+          />
+        </div>
       )}
 
       {/* Main content area */}
@@ -415,6 +447,14 @@ export default function DiscoveryStep({
           </div>
         </div>
       </div>
+
+      {/* Research Report Modal */}
+      <ResearchModal
+        isOpen={researchModalOpen}
+        onClose={() => setResearchModalOpen(false)}
+        research={research ?? null}
+        gapAnalysis={gapAnalysis}
+      />
 
       {/* Warning if no experiences after completion */}
       {discoveryConfirmed && experiences.length === 0 && (

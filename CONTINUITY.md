@@ -1347,3 +1347,53 @@ Added 3 new programmatic checks to `validate_resume()` targeting structural sign
 ### Verification
 - 229 frontend tests pass (16/16 suites)
 - Build passes with zero warnings
+
+## Gap Analysis Bug Fix + Research Report Modal (2026-02-02)
+
+### Bug Fix: Gap Analysis Shows Empty Data
+**Root cause**: Research LLM call (`research.py`) used `max_tokens=4096`, but response JSON was 17,849+ chars and got truncated. JSON parsing failed silently, falling back to empty arrays for all gap analysis fields.
+
+**Fixes applied**:
+1. **research.py**: Increased `max_tokens` from 4096 to 8192
+2. **research.py**: Changed `logger.error` to `logger.warning` with response length context when JSON fallback is taken
+3. **discovery.py**: Fixed `agenda.topics[0]["status"]` → `agenda.topics[0].status` (Pydantic v2 re-validates dicts into `AgendaTopic` models; dict assignment fails on Pydantic objects)
+
+### Feature: Research Report Modal in Discovery Step
+Users can now view the complete research report during the discovery phase.
+
+**Changes**:
+1. **ResearchStep.tsx**: Exported `ResearchFullView` and `ResearchModal` components
+2. **DiscoveryStep.tsx**: Added `research` prop, imported `ResearchModal`, added "View Research Report" button above gap analysis, renders modal when open
+3. **page.tsx**: Passes `research={workflow.data.research}` to `<DiscoveryStep>`
+
+### Verification
+- 653 backend tests pass (2 skipped)
+- 229 frontend tests pass (16/16 suites)
+- Build passes with zero warnings
+
+## Research Modal Enhancement - Show Full Data (2026-02-02)
+
+**Problem**: Research "Show More" modal only displayed the `research` section (company overview, culture, values, tech stack, similar profiles, hiring patterns, news, hiring criteria, ideal profile). The rich `gap_analysis` data (recommended_emphasis, transferable_skills, keywords_to_include, potential_concerns) was never shown anywhere — only 4 strengths + 4 gaps were displayed truncated in the Gap Analysis card.
+
+**Also fixed**: Tech stack importance mapping was broken — LLM returns "critical"/"important"/"nice-to-have" but frontend checked for "high"/"medium"/"low", causing all items to render in default gray.
+
+### Changes
+1. **ResearchStep.tsx**:
+   - Added `importanceStyle()` helper mapping "critical"→red, "important"→yellow, default→gray
+   - Fixed tech stack importance styling in both summary card and modal
+   - `ResearchFullView` now accepts optional `gapAnalysis` prop
+   - Added 6 new sections to modal: Strengths (full list), Gaps (full list), Recommended Emphasis, Transferable Skills, Keywords to Include, Potential Concerns
+   - `ResearchModal` now accepts and passes `gapAnalysis` prop
+
+2. **DiscoveryStep.tsx**: Passes `gapAnalysis` to `<ResearchModal>`
+
+3. **page.tsx** (3 locations fixed):
+   - **Research review screen** (pre-discovery): Was only showing company_culture + company_values. Now shows: company_overview, culture, values, tech_stack, similar_profiles, hiring_patterns, company_news, hiring_criteria preview, ideal_profile preview + "Show More" button opening full modal
+   - **Completed stage review** (viewingStage=research): Added entire Research Insights section with summary + "Show More" modal. Previously had zero research data display.
+   - Both locations use `ResearchModal` with `gapAnalysis` prop for full detail view
+
+### Result
+- ALL 3 places where research data is displayed now show the full content
+- "Show More" modal shows EVERYTHING: all research fields + all gap analysis fields (strengths, gaps, recommended_emphasis, transferable_skills, keywords_to_include, potential_concerns)
+- Tech stack items display correct color coding based on importance level
+- Build passes, TypeScript compiles

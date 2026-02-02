@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 
-const API_URL = "";
 
 interface ChatMessage {
   id: string;
@@ -144,7 +143,7 @@ export default function DraftingChat({
         return;
       }
 
-      const response = await fetch(`${API_URL}/api/optimize/${threadId}/editor/assist`, {
+      const response = await fetch(`/api/optimize/${threadId}/editor/assist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -232,7 +231,7 @@ export default function DraftingChat({
       }
 
       // For other actions, call the API
-      const response = await fetch(`${API_URL}/api/optimize/${threadId}/editor/assist`, {
+      const response = await fetch(`/api/optimize/${threadId}/editor/assist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

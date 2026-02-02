@@ -11,7 +11,7 @@ Usage:
 The tuning loop with memory:
 1. Loads accumulated learnings from previous iterations
 2. Runs the current drafting prompt against sample profiles/jobs
-3. Uses LLM-as-a-judge to score outputs on 4 dimensions
+3. Uses LLM-as-a-judge to score outputs on 6 dimensions
 4. LEARNS from grader feedback and updates memory
 5. Provides targeted suggestions based on patterns in memory
 
@@ -49,91 +49,75 @@ logger = logging.getLogger(__name__)
 
 
 def create_draft_generator(memory_context: str = ""):
-    """Create a draft generator function with optional memory context.
+    """Create a draft generator that mirrors the production pipeline.
+
+    Uses the same _build_drafting_context_from_raw function and message format
+    as the production draft_resume_node, so tuning scores reflect real behavior.
 
     Args:
         memory_context: Accumulated learnings to guide drafting style.
 
     Returns:
-        Async function that generates drafts.
+        Async function that generates drafts matching production pipeline.
     """
 
-    async def generate_draft(profile: dict, job: dict) -> str:
-        """Generate a resume draft using the current drafting node.
+    async def generate_draft(profile: dict, job: dict, profile_text: str = "") -> str:
+        """Generate a resume draft using the production code path.
 
-        This calls the actual drafting logic to test the current prompt.
+        Mirrors draft_resume_node in workflow/nodes/drafting.py:
+        1. Builds context via _build_drafting_context_from_raw
+        2. Uses RESUME_DRAFTING_PROMPT as system message
+        3. Sends "Create an ATS-optimized resume based on:" as user message
+        4. Extracts HTML from code blocks if needed
         """
         from langchain_anthropic import ChatAnthropic
+        from langchain_core.messages import HumanMessage, SystemMessage
         from config import get_settings
-        from workflow.nodes.drafting import RESUME_DRAFTING_PROMPT
+        from workflow.nodes.drafting import (
+            RESUME_DRAFTING_PROMPT,
+            _build_drafting_context_from_raw,
+            _extract_content_from_code_block,
+        )
 
         settings = get_settings()
         llm = ChatAnthropic(
             model=settings.anthropic_model,
             api_key=settings.anthropic_api_key,
             temperature=0.3,
+            max_tokens=4096,
         )
 
-        # Build context similar to what the drafting node receives
-        profile_summary = f"""
-Name: {profile.get('name', 'Unknown')}
-Headline: {profile.get('headline', '')}
-Summary: {profile.get('summary', '')}
-
-Experience:
-"""
-        for exp in profile.get('experience', []):
-            profile_summary += f"\n- {exp.get('position', '')} at {exp.get('company', '')}"
-            if desc := exp.get('description'):
-                profile_summary += f"\n  {desc}"
-            if achievements := exp.get('achievements'):
-                for ach in achievements:
-                    profile_summary += f"\n  * {ach}"
-
-        profile_summary += f"\n\nSkills: {', '.join(profile.get('skills', []))}"
-
-        if edu := profile.get('education'):
-            profile_summary += "\n\nEducation:"
-            for e in edu:
-                profile_summary += f"\n- {e.get('degree', '')} from {e.get('institution', '')}"
-
-        if certs := profile.get('certifications'):
-            profile_summary += f"\n\nCertifications: {', '.join(certs)}"
-
-        job_summary = f"""
-Title: {job.get('title', '')}
-Company: {job.get('company_name', '')}
-Description: {job.get('description', '')}
-
-Requirements: {', '.join(job.get('requirements', []))}
-Tech Stack: {', '.join(job.get('tech_stack', []))}
-Responsibilities: {', '.join(job.get('responsibilities', []))}
-"""
-
-        from langchain_core.messages import HumanMessage, SystemMessage
+        # Build context using the same function as production
+        context = _build_drafting_context_from_raw(
+            profile_text=profile_text,
+            job_text=job.get("description", ""),
+            profile_name=profile.get("name", "Candidate"),
+            job_title=job.get("title", "Position"),
+            job_company=job.get("company_name", "Company"),
+            user_profile=profile,
+            job_posting=job,
+            gap_analysis={},
+            qa_history=[],
+            research={},
+            discovered_experiences=[],
+            user_preferences=None,
+        )
 
         # Build system prompt with memory context if available
         system_prompt = RESUME_DRAFTING_PROMPT
         if memory_context:
             system_prompt += f"\n\n---\n\n{memory_context}"
 
+        # Same message format as production (drafting.py line 275)
         messages = [
             SystemMessage(content=system_prompt),
-            HumanMessage(content=f"""Create an ATS-optimized resume for this candidate targeting the specified job.
-
-## Candidate Profile
-{profile_summary}
-
-## Target Job
-{job_summary}
-
-Generate the resume in clean HTML format suitable for export to DOCX/PDF.
-Focus on highlighting relevant experience and achievements that match the job requirements.
-Include quantified achievements where available."""),
+            HumanMessage(content=f"Create an ATS-optimized resume based on:\n\n{context}"),
         ]
 
         response = await llm.ainvoke(messages)
-        return response.content
+
+        # Extract HTML from code blocks, same as production (drafting.py line 280)
+        return _extract_content_from_code_block(response.content, "html")
 
     return generate_draft
 
@@ -284,6 +268,68 @@ def reset_memory():
     print("Note: History is preserved. Use --reset to also clear history.")
 
 
+def run_validation():
+    """Run programmatic validation checks only (no LLM calls).
+
+    Validates sample resumes against the programmatic checks in validate_resume():
+    - Summary word count (<= 50)
+    - Bullet word count (<= 15)
+    - Compound sentence detection
+    - Quantification rate (>= 50%)
+    - AI-tell word/phrase detection
+    - Rhythm variation (no 3+ uniform consecutive bullets)
+    - Summary years+domain grounded in source (scope conflation)
+    - No ungrounded scale claims (company-to-individual attribution)
+    - Keyword coverage (>= 30% of job posting key terms)
+    - Reverse chronological order (newest experience first)
+    - Action verb usage
+    - Required sections (skills, education)
+    """
+    from workflow.nodes.drafting import validate_resume
+
+    samples_path = Path(__file__).parent / "datasets" / "drafting_samples.json"
+    with open(samples_path) as f:
+        data = json.load(f)
+
+    print("\n" + "=" * 60)
+    print("PROGRAMMATIC VALIDATION (no LLM calls)")
+    print("=" * 60)
+    print(f"Samples: {len(data['samples'])}")
+    print(f"Checks: summary_length, bullet_word_count, no_compound_bullets, quantification_rate, ai_tells_clean, rhythm_variation, summary_years_grounded, no_ungrounded_scale, keyword_coverage, reverse_chronological, action_verbs, skills_section, education_section")
+    print()
+
+    # This runs validation on any pre-existing drafts if available
+    # For now, just confirm the validation function works
+    test_html = """
+    <h1>Test Candidate</h1>
+    <p>test@email.com</p>
+    <h2>Professional Summary</h2>
+    <p>Backend engineer with 5 years building distributed systems at scale.</p>
+    <h2>Experience</h2>
+    <h3>Engineer | Company | 2020-Present</h3>
+    <ul>
+    <li>Built backend API serving 10K users</li>
+    <li>Reduced latency 40% via caching</li>
+    <li>Led team of 5 engineers</li>
+    </ul>
+    <h2>Skills</h2>
+    <p>Python, JavaScript</p>
+    <h2>Education</h2>
+    <p><strong>BS CS</strong> - University, 2018</p>
+    """
+
+    result = validate_resume(test_html)
+    print("Sample validation result:")
+    for check, passed in result.checks.items():
+        status = "PASS" if passed else "FAIL"
+        print(f"  [{status}] {check}")
+    if result.errors:
+        print(f"\nErrors: {result.errors}")
+    if result.warnings:
+        print(f"Warnings: {result.warnings}")
+    print(f"\nOverall valid: {result.valid}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Drafting prompt tuning loop with memory",
@@ -307,10 +353,13 @@ Memory-guided workflow:
     parser.add_argument("--show-memory", action="store_true", help="Show accumulated learnings")
     parser.add_argument("--reset-memory", action="store_true", help="Reset memory learnings")
     parser.add_argument("--show-prompt", action="store_true", help="Show current drafting prompt")
+    parser.add_argument("--validate", action="store_true", help="Run programmatic validation only (no LLM calls)")
 
     args = parser.parse_args()
 
-    if args.check:
+    if args.validate:
+        run_validation()
+    elif args.check:
         check_status()
     elif args.iterate:
         asyncio.run(run_iteration())

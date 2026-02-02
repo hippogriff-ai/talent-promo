@@ -259,29 +259,3 @@ def has_blocking_bias(flags: list[BiasFlag]) -> bool:
     return any(f.severity == "block" for f in flags)
 
 
-def get_bias_categories(flags: list[BiasFlag]) -> list[str]:
-    """Get unique categories of detected bias.
-
-    Args:
-        flags: List of bias flags.
-
-    Returns:
-        List of unique category names (strings).
-    """
-    return list(set(f.category.value for f in flags))
-
-
-def count_by_category(flags: list[BiasFlag]) -> dict[str, int]:
-    """Count bias flags by category.
-
-    Args:
-        flags: List of bias flags.
-
-    Returns:
-        Dict mapping category name to count.
-    """
-    counts: dict[str, int] = {}
-    for flag in flags:
-        cat = flag.category.value
-        counts[cat] = counts.get(cat, 0) + 1
-    return counts

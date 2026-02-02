@@ -32,11 +32,14 @@ from .graders.drafting_llm_grader import DraftingLLMGrader
 
 logger = logging.getLogger(__name__)
 
-TARGET_IMPROVEMENT = 0.15  # 15% improvement required
+TARGET_IMPROVEMENT = 0.10  # 10% improvement required (new grader is stricter)
 MAX_ITERATIONS = 10
 
-# Dimensions we track
-DIMENSIONS = ["job_relevance", "achievement_quality", "professional_quality", "ats_optimization"]
+# Dimensions we track (v2: 6 dimensions aligned with grader)
+DIMENSIONS = [
+    "source_fidelity", "conciseness", "narrative_hierarchy",
+    "narrative_coherence", "job_relevance", "ats_optimization",
+]
 
 
 class IterationResult(dict):
@@ -105,12 +108,12 @@ class DraftingTuningLoop:
 
     async def run_iteration(
         self,
-        draft_generator: Callable[[dict, dict], Awaitable[str]]
+        draft_generator: Callable[[dict, dict, str], Awaitable[str]]
     ) -> IterationResult:
         """Run one iteration of the tuning loop.
 
         Args:
-            draft_generator: Async function that takes (profile, job) and returns draft HTML.
+            draft_generator: Async function that takes (profile, job, profile_text) and returns draft HTML.
 
         Returns:
             IterationResult with current score, improvement, and suggestions.
@@ -131,9 +134,11 @@ class DraftingTuningLoop:
                 {
                     "sample": r["sample_id"],
                     "score": r["grade"]["overall_score"],
+                    "source_fidelity": r["grade"].get("source_fidelity", 0),
+                    "conciseness": r["grade"].get("conciseness", 0),
+                    "narrative_hierarchy": r["grade"].get("narrative_hierarchy", 0),
+                    "narrative_coherence": r["grade"].get("narrative_coherence", 0),
                     "job_relevance": r["grade"].get("job_relevance", 0),
-                    "achievement_quality": r["grade"].get("achievement_quality", 0),
-                    "professional_quality": r["grade"].get("professional_quality", 0),
                     "ats_optimization": r["grade"].get("ats_optimization", 0),
                     "reasoning": r["grade"].get("reasoning", "")
                 }
@@ -180,9 +185,8 @@ class DraftingTuningLoop:
         if not scores:
             return {}
 
-        dimensions = ["job_relevance", "achievement_quality", "professional_quality", "ats_optimization"]
         breakdown = {}
-        for dim in dimensions:
+        for dim in DIMENSIONS:
             values = [s.get(dim, 0) for s in scores]
             breakdown[dim] = sum(values) / len(values) if values else 0
 

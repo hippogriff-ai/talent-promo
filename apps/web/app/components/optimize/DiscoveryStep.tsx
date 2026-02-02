@@ -19,7 +19,6 @@ import DiscoveredExperiences from "./DiscoveredExperiences";
 import SessionRecoveryPrompt from "./SessionRecoveryPrompt";
 import DiscoveryAgendaComponent from "./DiscoveryAgenda";
 
-const API_URL = "";
 
 interface DiscoveryStepProps {
   threadId: string;
@@ -195,7 +194,7 @@ export default function DiscoveryStep({
     setIsSubmitting(true);
     try {
       const response = await fetch(
-        `${API_URL}/api/optimize/${threadId}/discovery/confirm`,
+        `/api/optimize/${threadId}/discovery/confirm`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -221,14 +220,14 @@ export default function DiscoveryStep({
   };
 
   const handleSkipDiscovery = async () => {
-    if (!confirm("Are you sure you want to skip the discovery phase? The AI will create your resume based only on your LinkedIn profile information.")) {
+    if (!confirm("Are you sure you want to skip the discovery phase? The AI will create your resume based solely on what you provided initially.")) {
       return;
     }
 
     setIsSubmitting(true);
     try {
       const response = await fetch(
-        `${API_URL}/api/optimize/${threadId}/discovery/skip`,
+        `/api/optimize/${threadId}/discovery/skip`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -258,7 +257,7 @@ export default function DiscoveryStep({
       // Send current profile/job markdown to backend so it uses the
       // latest content (including any user edits from the modal)
       const response = await fetch(
-        `${API_URL}/api/optimize/${threadId}/gap-analysis/rerun`,
+        `/api/optimize/${threadId}/gap-analysis/rerun`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -404,7 +403,7 @@ export default function DiscoveryStep({
             <h4 className="font-medium text-gray-700 mb-2">Short on time?</h4>
             <p className="text-sm text-gray-600 mb-3">
               You can skip the discovery phase and proceed directly to resume drafting.
-              The AI will use only your LinkedIn profile information.
+              The AI will use solely what you provided initially.
             </p>
             <button
               onClick={handleSkipDiscovery}

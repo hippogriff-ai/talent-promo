@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-const API_URL = "";
 
 const STORAGE_KEYS = {
   preferences: "resume_agent:preferences",
@@ -151,7 +150,7 @@ export function usePreferences() {
         const anonymousId = localStorage.getItem(STORAGE_KEYS.anonymousId);
 
         // Call backend to learn preferences
-        const response = await fetch(`${API_URL}/api/preferences/learn`, {
+        const response = await fetch(`/api/preferences/learn`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

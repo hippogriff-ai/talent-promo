@@ -1026,8 +1026,8 @@ async def _handle_user_response(
     discovery_prompts = list(state.get("discovery_prompts", []))
     discovery_agenda = discovery_agenda or state.get("discovery_agenda", {})
 
-    # Check for completion signals - skip all questions and go directly to draft
-    if user_response.lower().strip() in ["done", "skip", "complete", "finish"]:
+    # Check for completion signals - end discovery and go directly to draft
+    if user_response.lower().strip() in ["done", "complete", "finish"]:
         return {
             "discovery_confirmed": True,
             "user_done_signal": True,  # Also skip QA phase
@@ -1037,12 +1037,39 @@ async def _handle_user_response(
             "updated_at": datetime.now().isoformat(),
         }
 
+    # Handle "skip" — skip the current question/topic, move to the next one
+    is_skip = user_response.lower().strip() == "skip"
+
     # Add user message
     user_message = DiscoveryMessage(
         role="user",
-        content=user_response,
+        content="(Skipped)" if is_skip else user_response,
     ).model_dump()
     discovery_messages.append(user_message)
+
+    if is_skip:
+        # Mark current topic as skipped and move on
+        discovery_exchanges += 1
+        if discovery_agenda and current_prompt.get("topic_id"):
+            current_topic_id = current_prompt.get("topic_id")
+            for topic in discovery_agenda.get("topics", []):
+                if topic.get("id") == current_topic_id:
+                    topic["status"] = "skipped"
+                    discovery_agenda["covered_topics"] = sum(
+                        1 for t in discovery_agenda.get("topics", [])
+                        if t.get("status") in ["covered", "skipped"]
+                    )
+                    discovery_agenda["current_topic_id"] = None
+                    logger.info(f"Topic '{topic.get('title')}' skipped by user")
+                    break
+        return {
+            "discovery_agenda": discovery_agenda,
+            "discovery_prompts": discovery_prompts,
+            "discovery_messages": discovery_messages,
+            "discovered_experiences": discovered_experiences,
+            "discovery_exchanges": discovery_exchanges,
+            "updated_at": datetime.now().isoformat(),
+        }
 
     # Process response with agenda context
     result = await process_discovery_response(user_response, current_prompt, state)

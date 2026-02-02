@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ValidationResults } from "../types/guardrails";
 
-const API_URL = "";
 
 // Custom error for rate limiting
 export class RateLimitError extends Error {
@@ -272,7 +271,7 @@ export function useWorkflow(): UseWorkflowReturn {
   // Start new workflow
   const startWorkflow = useCallback(
     async (linkedinUrl?: string, jobUrl?: string, resumeText?: string, jobText?: string, userPreferences?: UserPreferences): Promise<string> => {
-      const response = await fetch(`${API_URL}/api/optimize/start`, {
+      const response = await fetch(`/api/optimize/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",  // Send session cookie
@@ -317,7 +316,7 @@ export function useWorkflow(): UseWorkflowReturn {
     async (threadId: string): Promise<void> => {
       // Fetch current state
       const response = await fetch(
-        `${API_URL}/api/optimize/status/${threadId}?include_data=true`,
+        `/api/optimize/status/${threadId}?include_data=true`,
         { credentials: "include" }
       );
 
@@ -370,7 +369,7 @@ export function useWorkflow(): UseWorkflowReturn {
     const pollStatus = async () => {
       try {
         const response = await fetch(
-          `${API_URL}/api/optimize/status/${state.threadId}?include_data=true`,
+          `/api/optimize/status/${state.threadId}?include_data=true`,
           { credentials: "include" }
         );
 
@@ -461,7 +460,7 @@ export function useWorkflow(): UseWorkflowReturn {
         };
       });
 
-      const response = await fetch(`${API_URL}/api/optimize/${state.threadId}/answer`, {
+      const response = await fetch(`/api/optimize/${state.threadId}/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -483,7 +482,7 @@ export function useWorkflow(): UseWorkflowReturn {
         throw new Error("No active workflow");
       }
 
-      const response = await fetch(`${API_URL}/api/optimize/${state.threadId}/editor/update`, {
+      const response = await fetch(`/api/optimize/${state.threadId}/editor/update`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -513,7 +512,7 @@ export function useWorkflow(): UseWorkflowReturn {
         throw new Error("No active workflow");
       }
 
-      const response = await fetch(`${API_URL}/api/optimize/${state.threadId}/export`, {
+      const response = await fetch(`/api/optimize/${state.threadId}/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -535,7 +534,7 @@ export function useWorkflow(): UseWorkflowReturn {
     if (!state.threadId) return;
 
     const response = await fetch(
-      `${API_URL}/api/optimize/status/${state.threadId}?include_data=true`,
+      `/api/optimize/status/${state.threadId}?include_data=true`,
       { credentials: "include" }
     );
 

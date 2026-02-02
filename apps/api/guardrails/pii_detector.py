@@ -263,21 +263,6 @@ def has_sensitive_pii(text: str) -> bool:
     return len(pii_items) > 0
 
 
-def get_pii_summary(pii_items: list[dict]) -> dict[str, int]:
-    """Get count of PII by type.
-
-    Args:
-        pii_items: List of PII items from detect_pii().
-
-    Returns:
-        Dict mapping type name to count.
-    """
-    counts: dict[str, int] = {}
-    for item in pii_items:
-        pii_type = item["type"]
-        counts[pii_type] = counts.get(pii_type, 0) + 1
-    return counts
-
 
 def format_pii_warnings(pii_items: list[dict]) -> list[dict]:
     """Format PII items for API response.

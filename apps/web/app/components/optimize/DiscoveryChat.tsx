@@ -136,6 +136,15 @@ export default function DiscoveryChat({
     }
   }, [messages, optimisticMessage]);
 
+  // Clear optimistic message when a new pending question arrives from the backend.
+  // This handles the "skip" case where the exact string "skip" may not appear in
+  // messages, but a new pendingPrompt.question means the backend processed our answer.
+  useEffect(() => {
+    if (optimisticMessage && pendingPrompt?.question) {
+      setOptimisticMessage(null);
+    }
+  }, [pendingPrompt?.question]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Scroll when optimistic message is shown
   useEffect(() => {
     if (optimisticMessage) {

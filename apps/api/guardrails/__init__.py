@@ -22,7 +22,7 @@ Usage:
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .bias_detector import (
     BiasCategory,
@@ -64,6 +64,10 @@ from .claim_validator import (
     validate_claims_grounded,
     format_ungrounded_claims,
     has_high_risk_claims,
+)
+from .content_moderator import (
+    check_content_safety,
+    validate_content_safety,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,6 +114,9 @@ __all__ = [
     "validate_claims_grounded",
     "format_ungrounded_claims",
     "has_high_risk_claims",
+    # Content moderation
+    "check_content_safety",
+    "validate_content_safety",
 ]
 
 
@@ -189,6 +196,16 @@ def validate_input(
                 f"risk={risk.value}, patterns={len(patterns)}"
             )
             validate_no_injection(text, config.injection_block_level)
+
+    # Content safety check
+    if config.block_toxic_content:
+        is_safe, reason = check_content_safety(text)
+        if not is_safe:
+            logger.warning(
+                f"Blocking unsafe content: thread={thread_id}, ip={ip_address}, "
+                f"reason={reason}"
+            )
+            validate_content_safety(text)
 
     # PII check (warn about sensitive PII in input)
     pii_items = detect_pii(text)

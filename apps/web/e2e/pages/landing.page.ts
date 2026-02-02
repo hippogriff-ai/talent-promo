@@ -33,6 +33,7 @@ export class LandingPage {
 
   // Input Mode Toggles
   readonly pasteResumeButton: Locator;
+  readonly uploadResumeButton: Locator;
   readonly linkedinUrlButton: Locator;
   readonly pasteJobButton: Locator;
   readonly jobUrlButton: Locator;
@@ -64,8 +65,9 @@ export class LandingPage {
     this.heroSubtitle = page.locator('p').filter({ hasText: /transform/i }).first();
 
     // Mode toggle buttons
-    this.pasteResumeButton = page.getByRole('button', { name: /paste resume/i });
-    this.linkedinUrlButton = page.getByRole('button', { name: /linkedin url/i });
+    this.pasteResumeButton = page.getByRole('button', { name: /^paste$/i });
+    this.uploadResumeButton = page.getByRole('button', { name: /upload/i });
+    this.linkedinUrlButton = page.getByRole('button', { name: /linkedin/i });
     this.pasteJobButton = page.getByRole('button', { name: /paste job description/i });
     this.jobUrlButton = page.getByRole('button', { name: /job url/i });
 
@@ -116,6 +118,10 @@ export class LandingPage {
     await this.pasteResumeButton.click();
   }
 
+  async switchToUploadMode() {
+    await this.uploadResumeButton.click();
+  }
+
   async switchToLinkedInMode() {
     await this.linkedinUrlButton.click();
   }
@@ -129,6 +135,7 @@ export class LandingPage {
   }
 
   async fillLinkedInUrl(url: string) {
+    await this.switchToLinkedInMode();
     await this.linkedinUrlInput.click();
     await this.linkedinUrlInput.fill(url);
   }
@@ -203,8 +210,8 @@ export class LandingPage {
   }
 
   async expectFormVisible() {
-    // Default mode shows LinkedIn URL input
-    await expect(this.linkedinUrlInput).toBeVisible();
+    // Default mode is paste - shows resume textarea
+    await expect(this.resumeTextarea).toBeVisible();
   }
 
   async expectNavigatedToOptimize() {

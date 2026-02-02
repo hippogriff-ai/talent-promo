@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export type EditorAction =
   | "improve"
@@ -59,7 +58,7 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
       setError(null);
 
       try {
-        const response = await fetch(`${API_URL}/api/optimize/${threadId}/editor/assist`, {
+        const response = await fetch(`/api/optimize/${threadId}/editor/assist`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -105,7 +104,7 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
       setError(null);
 
       try {
-        const response = await fetch(`${API_URL}/api/optimize/${threadId}/editor/regenerate`, {
+        const response = await fetch(`/api/optimize/${threadId}/editor/regenerate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -159,7 +158,7 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
       setError(null);
 
       try {
-        const response = await fetch(`${API_URL}/api/optimize/${threadId}/editor/assist`, {
+        const response = await fetch(`/api/optimize/${threadId}/editor/assist`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

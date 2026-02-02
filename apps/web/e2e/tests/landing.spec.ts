@@ -29,6 +29,16 @@ test.describe('Landing Page', () => {
     await expect(landingPage.resumeTextarea).toBeVisible();
   });
 
+  test('can switch to upload mode', async ({ landingPage }) => {
+    await landingPage.switchToUploadMode();
+    await expect(landingPage.page.getByText(/drop your resume here/i)).toBeVisible();
+  });
+
+  test('upload mode shows accepted formats', async ({ landingPage }) => {
+    await landingPage.switchToUploadMode();
+    await expect(landingPage.page.getByText(/pdf or docx/i)).toBeVisible();
+  });
+
   test('can enter resume text', async ({ landingPage }) => {
     await landingPage.fillResumeText(testResume.text);
     await expect(landingPage.resumeTextarea).toHaveValue(testResume.text);

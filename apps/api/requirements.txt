@@ -29,10 +29,5 @@ markdown>=3.5.0
 # Security
 bleach>=6.0.0  # HTML sanitization to prevent XSS
 
-# Authentication
-pyjwt>=2.8.0  # JWT token handling
-resend>=0.8.0  # Email sending (optional)
-email-validator>=2.1.0  # Email validation
-
 # Testing
 pytest-asyncio>=1.0.0  # Async test support

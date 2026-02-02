@@ -1299,15 +1299,16 @@ class TestGuardrailsIntegration:
     - `log_content_flagged()` - reason, preview
 
 #### Tests ✅
-- `apps/api/tests/test_guardrails.py` - 148 tests covering:
+- `apps/api/tests/test_guardrails.py` - 182 tests covering:
   - TestInputValidators: 9 tests
   - TestInjectionDetector: 27 tests
   - TestOutputValidators: 23 tests
-  - TestBiasDetector: 23 tests
+  - TestBiasDetector: 20 tests (was 23; removed 3 dead code tests)
   - TestGuardrailsIntegration: 12 tests
-  - TestPIIDetector: 26 tests
+  - TestPIIDetector: 25 tests (was 26; removed 1 dead code test)
   - TestAuditLogger: 10 tests
   - TestClaimValidator: 18 tests
+  - TestContentModerator: 38 tests (new)
 
 #### Phase 6: Frontend Integration ✅
 - **6.1 TypeScript Interfaces** - `apps/web/app/types/guardrails.ts`
@@ -1341,11 +1342,44 @@ class TestGuardrailsIntegration:
   - Integrated into `validate_output()` when source_profile provided
   - 18 tests covering extraction, validation, and integration
 
+#### Phase 1.3: Content Moderation (P0 - Critical) ✅
+- **1.3 Content Safety** - `apps/api/guardrails/content_moderator.py`
+  - Lightweight regex-based content moderation (no external dependencies)
+  - 25+ safe professional context patterns to prevent false positives:
+    - Technical: "kill process", "attack surface", "race condition", "deadlock"
+    - Security: "penetration testing", "threat model", "offensive security"
+    - Business: "target audience", "execute strategy", "hit target", "deadline"
+    - HR/Medical: "terminate employment", "drug testing", "abuse detection"
+    - Social Work: "suicide prevention", "abuse reporting"
+  - 15+ blocked content patterns across 5 categories:
+    - Violence/threats toward people
+    - Hate speech and supremacist content
+    - Illegal activity (drug manufacturing, money laundering, hacking)
+    - Explicit sexual content
+    - Self-harm instructions and encouragement
+  - `check_content_safety()` returns (is_safe, reason) tuple
+  - `validate_content_safety()` raises HTTPException for unsafe content
+  - Integrated into `validate_input()` via `config.block_toxic_content` flag
+  - Pattern masking approach: safe contexts masked before blocked pattern check
+  - Patterns compiled at import time for performance
+  - 38 tests covering safe contexts, blocked content, integration, case sensitivity
+
+#### Cleanup: Dead Code Removal ✅
+- Removed unused `get_bias_categories()` and `count_by_category()` from `bias_detector.py`
+- Removed unused `get_pii_summary()` from `pii_detector.py`
+- Removed corresponding tests (3 tests removed)
+- These functions were not in `__all__` and not used by any production code
+
+#### Endpoint Coverage Fix ✅
+- Added `validate_input()` to `POST /{thread_id}/drafting/save` endpoint
+  - Was previously the only text-accepting endpoint without input validation
+  - Now validates `html_content` before saving
+
 ### TODO
 
 #### Optional Enhancements
-- [ ] Content moderation with Guardrails AI library
-- [ ] ML-based toxicity detection with detoxify
+- [ ] ML-based toxicity detection with detoxify for higher accuracy
+- [ ] Guardrails AI library integration for advanced content moderation
 
 ---
 

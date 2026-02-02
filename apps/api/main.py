@@ -1,6 +1,5 @@
 import logging
 import os
-import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
@@ -27,17 +26,9 @@ if os.getenv("LANGSMITH_API_KEY"):
 # ============================================================================
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-# Add project root to Python path to import temporal module
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-# Note: Using absolute import from routers for compatibility with pytest pythonpath config
-# When running the API, use: cd apps/api && uvicorn main:app --reload
-from routers import agents, documents, jobs, research, research_agent, optimize, filesystem, preferences, ratings  # noqa: E402
-from services.thread_metadata import get_metadata_service  # noqa: E402
+from routers import documents, optimize, preferences, ratings
+from services.thread_metadata import get_metadata_service
 
 logger = logging.getLogger(__name__)
 
@@ -70,15 +61,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     metadata_service.stop_cleanup_task()
     logger.info("Thread cleanup task stopped")
 
-    # Close Temporal client if initialized
-    if research_agent._temporal_client:
-        try:
-            logger.info("Closing Temporal client...")
-            # Note: Temporal Python SDK clients don't need explicit close in current version
-            # The connection will be closed when the process exits
-            research_agent._temporal_client = None
-        except Exception as e:
-            logger.error(f"Error during Temporal client cleanup: {e}")
     logger.info("API shutdown complete")
 
 
@@ -89,36 +71,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3002",
-        "http://localhost:3003",
-        "http://localhost:3004",
-        "http://localhost:3005",
-        "http://localhost:3006",
-        "http://localhost:3007",
-        "http://localhost:3008",
-        "http://localhost:3009",
-        "http://localhost:3010",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    # Expose Content-Disposition so browsers can read filename for cross-origin downloads
-    expose_headers=["Content-Disposition"],
-)
+# No CORS middleware needed — Next.js BFF proxies all browser requests.
+# FastAPI is never directly exposed to the browser.
 
 # Include routers
-app.include_router(agents.router)
-app.include_router(research.router)
-app.include_router(research_agent.router)
-app.include_router(jobs.router)
 app.include_router(documents.router)
 app.include_router(optimize.router)  # LangGraph resume optimization workflow
-app.include_router(filesystem.router)  # Virtual filesystem with Linux-like commands
 app.include_router(preferences.router)  # User preferences (anonymous)
 app.include_router(ratings.router)  # Draft ratings (anonymous)
 

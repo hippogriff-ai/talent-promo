@@ -20,7 +20,6 @@ import ResumeEditor from "../components/optimize/ResumeEditor";
 import ExportStep from "../components/optimize/ExportStep";
 import CompletionScreen from "../components/optimize/CompletionScreen";
 
-const API_URL = "";
 const PENDING_INPUT_KEY = "talent_promo:pending_input";
 
 /**
@@ -134,7 +133,7 @@ export default function OptimizePage() {
       }
     }
     setHasCheckedPending(true);
-  }, [hasCheckedPending, workflow, workflowSession]);
+  }, [hasCheckedPending, workflow, workflowSession, preferences]);
 
   // Check for existing session on mount
   useEffect(() => {
@@ -145,11 +144,11 @@ export default function OptimizePage() {
   }, [workflowSession.isLoading, workflowSession.existingSession]);
 
   // Sync session state from workflow status
+  // Note: workflowSession excluded from deps intentionally — syncFromBackend depends on session,
+  // which it updates, so including it would risk a re-render loop. The effect triggers on
+  // workflow changes which are the actual reactive signals.
   useEffect(() => {
     if (workflow.threadId && workflowSession.session) {
-      // Map workflow status to session
-      const currentStage = mapStepToStage(workflow.currentStep);
-
       // Update session based on workflow progress
       workflowSession.syncFromBackend({
         current_step: workflow.currentStep,
@@ -170,7 +169,8 @@ export default function OptimizePage() {
         if (stepOverride) setStepOverride(null);
       }
     }
-  }, [workflow.threadId, workflow.currentStep, workflow.status, workflow.data.discoveryConfirmed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflow.threadId, workflow.currentStep, workflow.status, workflow.data.discoveryConfirmed, stepOverride]);
 
   // Detect research completion and show review screen
   useEffect(() => {
@@ -322,7 +322,7 @@ export default function OptimizePage() {
   };
 
   // Handle stage click in stepper
-  const handleStageClick = (stage: WorkflowStage) => {
+  const handleStageClick = async (stage: WorkflowStage) => {
     if (!workflowSession.canAccessStage(stage)) {
       // Cannot access locked stages
       return;
@@ -337,11 +337,40 @@ export default function OptimizePage() {
       return;
     }
 
-    // If clicking a completed stage, enter viewing mode
+    // If clicking a completed stage that is BEFORE the current stage, offer to go back
     const stageStatus = workflowSession.session?.stages[stage];
     if (stageStatus === "completed") {
+      // Going back to discovery from drafting
+      if (stage === "discovery" && (currentWorkflowStage === "drafting" || currentWorkflowStage === "export")) {
+        if (!confirm("Go back to Discovery? Your current draft will be discarded and regenerated after you finish.")) {
+          return;
+        }
+        await handleRevertToDiscovery();
+        return;
+      }
+      // Going back to research — just view it (read-only)
       setViewingStage(stage);
       workflowSession.setActiveStage(stage);
+    }
+  };
+
+  // Revert from drafting back to discovery
+  const handleRevertToDiscovery = async () => {
+    if (!workflow.threadId) return;
+    try {
+      const response = await fetch(
+        `/api/optimize/${workflow.threadId}/discovery/revert`,
+        { method: "POST", headers: { "Content-Type": "application/json" } }
+      );
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to revert to discovery");
+      }
+      setViewingStage(null);
+      setDiscoveryDone(false);
+      await workflow.refreshStatus();
+    } catch (error) {
+      console.error("Failed to revert to discovery:", error);
     }
   };
 
@@ -369,7 +398,7 @@ export default function OptimizePage() {
 
     try {
       const response = await fetch(
-        `${API_URL}/api/optimize/${workflow.threadId}/drafting/revert`,
+        `/api/optimize/${workflow.threadId}/drafting/revert`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -403,10 +432,10 @@ export default function OptimizePage() {
   const getDownloadLinks = () => {
     if (!workflow.threadId) return [];
     return [
-      { format: "pdf", label: "Resume (PDF)", url: `${API_URL}/api/optimize/${workflow.threadId}/export/download/pdf` },
-      { format: "docx", label: "Resume (Word)", url: `${API_URL}/api/optimize/${workflow.threadId}/export/download/docx` },
-      { format: "txt", label: "Resume (Plain Text)", url: `${API_URL}/api/optimize/${workflow.threadId}/export/download/txt` },
-      { format: "json", label: "Data Export (JSON)", url: `${API_URL}/api/optimize/${workflow.threadId}/export/download/json` },
+      { format: "pdf", label: "Resume (PDF)", url: `/api/optimize/${workflow.threadId}/export/download/pdf` },
+      { format: "docx", label: "Resume (Word)", url: `/api/optimize/${workflow.threadId}/export/download/docx` },
+      { format: "txt", label: "Resume (Plain Text)", url: `/api/optimize/${workflow.threadId}/export/download/txt` },
+      { format: "json", label: "Data Export (JSON)", url: `/api/optimize/${workflow.threadId}/export/download/json` },
     ];
   };
 
@@ -414,7 +443,7 @@ export default function OptimizePage() {
   const saveResearchData = async (data: { user_profile?: Record<string, unknown>; job_posting?: Record<string, unknown> }) => {
     if (!workflow.threadId) return;
     try {
-      const response = await fetch(`${API_URL}/api/optimize/${workflow.threadId}/research/data`, {
+      const response = await fetch(`/api/optimize/${workflow.threadId}/research/data`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -437,13 +466,23 @@ export default function OptimizePage() {
         export: "locked" as const,
       };
     }
-    return workflowSession.session.stages;
+    const stages = { ...workflowSession.session.stages };
+    // When discovery is done (skipped or confirmed), override stages immediately
+    // so the stepper shows drafting as active before backend polling catches up
+    if (discoveryDone) {
+      stages.discovery = "completed";
+      stages.drafting = "active";
+    }
+    return stages;
   };
 
   // Get current stage (for stepper display)
   const getCurrentStage = (): WorkflowStage => {
     // If viewing a completed stage, highlight that in the stepper
     if (viewingStage) return viewingStage;
+    // If discovery was just skipped/confirmed, show drafting as active immediately
+    // (backend is generating the draft but currentStep hasn't updated yet)
+    if (discoveryDone && workflowSession.session?.currentStage === "discovery") return "drafting";
     if (!workflowSession.session) return "research";
     return workflowSession.session.currentStage;
   };
@@ -594,6 +633,9 @@ export default function OptimizePage() {
                           <span className="text-green-500 mr-2">+</span>{s}
                         </li>
                       ))}
+                      {(!workflow.data.gapAnalysis.strengths || workflow.data.gapAnalysis.strengths.length === 0) && (
+                        <li className="text-sm text-gray-500 italic">No matching strengths identified</li>
+                      )}
                     </ul>
                   </div>
                   <div>
@@ -604,6 +646,9 @@ export default function OptimizePage() {
                           <span className="text-amber-500 mr-2">!</span>{g}
                         </li>
                       ))}
+                      {(!workflow.data.gapAnalysis.gaps || workflow.data.gapAnalysis.gaps.length === 0) && (
+                        <li className="text-sm text-gray-500 italic">No gaps identified — strong match!</li>
+                      )}
                     </ul>
                   </div>
                 </div>
@@ -878,6 +923,9 @@ export default function OptimizePage() {
                         {s}
                       </li>
                     ))}
+                    {(!workflow.data.gapAnalysis.strengths || workflow.data.gapAnalysis.strengths.length === 0) && (
+                      <li className="text-sm text-gray-500 italic">No matching strengths identified</li>
+                    )}
                   </ul>
                 </div>
                 {workflow.data.gapAnalysis.transferable_skills?.length > 0 && (
@@ -909,6 +957,9 @@ export default function OptimizePage() {
                         {g}
                       </li>
                     ))}
+                    {(!workflow.data.gapAnalysis.gaps || workflow.data.gapAnalysis.gaps.length === 0) && (
+                      <li className="text-sm text-gray-500 italic">No gaps identified — strong match!</li>
+                    )}
                   </ul>
                 </div>
                 {workflow.data.gapAnalysis.keywords_to_include?.length > 0 && (

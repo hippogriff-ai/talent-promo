@@ -12,6 +12,7 @@ import {
   DraftingSuggestion,
   DraftVersion,
   DraftValidation,
+  VersionTrigger,
 } from "../../hooks/useDraftingStorage";
 import { useSuggestions, useDraftingState } from "../../hooks/useSuggestions";
 import { useSuggestionTracking, TrackedSuggestion } from "../../hooks/useSuggestionTracking";
@@ -24,7 +25,6 @@ import { ResumeDiffView } from "./ResumeDiffView";
 import ValidationWarnings from "./ValidationWarnings";
 import type { ValidationResults } from "../../types/guardrails";
 
-const API_URL = "";
 
 interface DraftingStepProps {
   threadId: string;
@@ -131,7 +131,7 @@ export default function DraftingStep({
   const versions: DraftVersion[] = backendVersions.map((v) => ({
     version: v.version,
     htmlContent: v.html_content,
-    trigger: v.trigger as any,
+    trigger: v.trigger as VersionTrigger,
     description: v.description,
     changeLog: [],
     createdAt: v.created_at,
@@ -452,7 +452,7 @@ export default function DraftingStep({
       }
 
       // Open PDF preview in new tab
-      const previewUrl = `${API_URL}/api/optimize/${threadId}/drafting/preview-pdf`;
+      const previewUrl = `/api/optimize/${threadId}/drafting/preview-pdf`;
       window.open(previewUrl, "_blank");
     } finally {
       setIsPreviewLoading(false);

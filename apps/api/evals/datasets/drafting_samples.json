@@ -1,5 +1,6 @@
 {
-  "description": "Silver dataset for drafting prompt evaluation. Each sample includes a profile, job posting, and expectations for draft quality.",
+  "description": "Silver dataset for drafting prompt evaluation. Each sample includes a profile, job posting, profile_text (original resume text for fidelity checking), and expectations for draft quality.",
+  "version": "2.0",
   "samples": [
     {
       "id": "software-engineer-mid",
@@ -31,6 +32,7 @@
           {"institution": "State University", "degree": "BS Computer Science", "field_of_study": "Computer Science"}
         ]
       },
+      "profile_text": "Alex Chen\nSoftware Engineer at TechCorp\n\n5 years building web applications. Passionate about clean code.\n\nExperience:\n\nSoftware Engineer | TechCorp | 2021-Present\nBuilt backend services using Python and PostgreSQL. Led migration from monolith to microservices.\n- Reduced API latency by 40%\n- Mentored 2 junior developers\n\nJunior Developer | StartupXYZ | 2019-2021\nFull-stack development with React and Node.js\n\nSkills: Python, JavaScript, PostgreSQL, AWS, Docker, React, Node.js\n\nEducation: BS Computer Science - State University",
       "job": {
         "title": "Senior Software Engineer",
         "company_name": "CloudScale Inc",
@@ -68,6 +70,7 @@
         ],
         "certifications": ["Google Data Analytics Certificate", "AWS ML Specialty (in progress)"]
       },
+      "profile_text": "Jordan Smith\nBusiness Analyst transitioning to Data Science\n\nMBA with 3 years of business analytics. Self-taught Python and ML.\n\nExperience:\n\nBusiness Analyst | FinanceCo | 2020-Present\nBuilt Excel models and dashboards. Started automating reports with Python.\n- Automated weekly reporting saving 10 hours/week\n- Built sales forecasting model\n\nSkills: Excel, Python, SQL, Tableau, scikit-learn, pandas\n\nEducation: MBA in Finance - Business School\n\nCertifications: Google Data Analytics Certificate, AWS ML Specialty (in progress)",
       "job": {
         "title": "Junior Data Scientist",
         "company_name": "DataDriven Co",
@@ -109,6 +112,7 @@
         ],
         "skills": ["Product Strategy", "Roadmapping", "SQL", "Figma", "Jira", "User Research"]
       },
+      "profile_text": "Maya Rodriguez\nProduct Manager | B2B SaaS\n\n7 years in product. Shipped features used by 1M+ users.\n\nExperience:\n\nSenior Product Manager | SaaSCo | 2019-Present\nOwn roadmap for enterprise features. Work with engineering to deliver quarterly releases.\n- Launched SSO feature driving $2M ARR\n- Improved onboarding reducing churn 25%\n- Led team of 8 engineers\n\nProduct Manager | AppStartup | 2016-2019\nFirst PM hire. Built product processes from scratch.\n\nSkills: Product Strategy, Roadmapping, SQL, Figma, Jira, User Research",
       "job": {
         "title": "Director of Product",
         "company_name": "EnterpriseTech",
@@ -142,6 +146,7 @@
         "skills": ["AWS", "Terraform", "Docker", "Kubernetes", "GitHub Actions", "Python", "Bash"],
         "certifications": ["AWS Solutions Architect Associate", "Kubernetes CKA"]
       },
+      "profile_text": "Sam Kim\nDevOps Engineer | AWS Certified\n\n2 years in DevOps. Love automation and infrastructure as code.\n\nExperience:\n\nDevOps Engineer | WebAgency | 2022-Present\nManage CI/CD pipelines and AWS infrastructure for client projects.\n- Reduced deployment time from 2 hours to 15 minutes\n- Set up monitoring reducing incidents 50%\n\nSkills: AWS, Terraform, Docker, Kubernetes, GitHub Actions, Python, Bash\n\nCertifications: AWS Solutions Architect Associate, Kubernetes CKA",
       "job": {
         "title": "Cloud Infrastructure Engineer",
         "company_name": "ScaleUp Inc",
@@ -181,6 +186,7 @@
         ],
         "skills": ["Google Ads", "Facebook Ads", "SEO", "Content Marketing", "Analytics", "HubSpot"]
       },
+      "profile_text": "Taylor Johnson\nMarketing Manager | Growth & Brand\n\n6 years in marketing spanning B2C and B2B. Data-driven approach.\n\nExperience:\n\nMarketing Manager | E-commerce Brand | 2020-Present\nLead digital marketing and brand campaigns.\n- Grew social following 300%\n- Launched influencer program generating $500K revenue\n- Reduced CAC 40%\n\nDigital Marketing Specialist | Marketing Agency | 2017-2020\nManaged campaigns for 10+ clients across industries.\n\nSkills: Google Ads, Facebook Ads, SEO, Content Marketing, Analytics, HubSpot",
       "job": {
         "title": "Head of Growth",
         "company_name": "Tech Startup",
@@ -192,6 +198,211 @@
         "should_highlight": ["300% social growth", "$500K influencer revenue", "40% CAC reduction"],
         "should_demonstrate": "leadership readiness and growth metrics",
         "min_score": 70
+      }
+    },
+    {
+      "id": "scope-conflation-trap",
+      "profile": {
+        "name": "Daniel Park",
+        "headline": "Backend Engineer",
+        "summary": "6 years of Java backend development. 1 year exploring AI/ML side projects.",
+        "experience": [
+          {
+            "company": "BigBank Corp",
+            "position": "Senior Backend Engineer",
+            "start_date": "2018",
+            "end_date": null,
+            "is_current": true,
+            "description": "Built and maintained Java microservices for payment processing. Handled 50M transactions/month.",
+            "achievements": ["Reduced payment processing latency 30%", "Mentored 4 junior engineers", "Led migration from Oracle to PostgreSQL"]
+          },
+          {
+            "company": "Personal Projects",
+            "position": "AI/ML Hobbyist",
+            "start_date": "2023",
+            "end_date": null,
+            "is_current": true,
+            "description": "Self-study in machine learning. Built a sentiment analysis tool using Python and HuggingFace.",
+            "achievements": ["Completed Coursera ML specialization", "Built sentiment classifier with 82% accuracy"]
+          }
+        ],
+        "skills": ["Java", "Python", "PostgreSQL", "Kafka", "Spring Boot", "HuggingFace", "PyTorch basics"],
+        "education": [
+          {"institution": "Tech University", "degree": "BS Computer Science", "field_of_study": "Computer Science"}
+        ]
+      },
+      "profile_text": "Daniel Park\nBackend Engineer\n\n6 years of Java backend development. 1 year exploring AI/ML side projects.\n\nExperience:\n\nSenior Backend Engineer | BigBank Corp | 2018-Present\nBuilt and maintained Java microservices for payment processing. Handled 50M transactions/month.\n- Reduced payment processing latency 30%\n- Mentored 4 junior engineers\n- Led migration from Oracle to PostgreSQL\n\nAI/ML Hobbyist | Personal Projects | 2023-Present\nSelf-study in machine learning. Built a sentiment analysis tool using Python and HuggingFace.\n- Completed Coursera ML specialization\n- Built sentiment classifier with 82% accuracy\n\nSkills: Java, Python, PostgreSQL, Kafka, Spring Boot, HuggingFace, PyTorch basics\n\nEducation: BS Computer Science - Tech University",
+      "job": {
+        "title": "AI Engineer",
+        "company_name": "MLStartup",
+        "description": "Build production ML pipelines and deploy models at scale.",
+        "requirements": ["3+ years ML/AI experience", "Python expertise", "Experience with model deployment", "Strong engineering fundamentals"],
+        "tech_stack": ["Python", "PyTorch", "Kubernetes", "MLflow", "AWS SageMaker"]
+      },
+      "expectations": {
+        "should_NOT_contain_pattern": "6\\+.*years.*AI|7.*years.*AI|years of AI/ML",
+        "should_keep_separate": ["6 years Java backend", "1 year AI/ML side projects"],
+        "trap": "scope_conflation",
+        "min_dimensions": {
+          "source_fidelity": 75
+        },
+        "min_score": 65
+      }
+    },
+    {
+      "id": "run-on-sentence-trap",
+      "profile": {
+        "name": "Lisa Wang",
+        "headline": "Frontend Engineer",
+        "summary": "4 years building React applications.",
+        "experience": [
+          {
+            "company": "DesignCo",
+            "position": "Frontend Engineer",
+            "start_date": "2020",
+            "end_date": null,
+            "is_current": true,
+            "description": "Built user interfaces for design tool platform.",
+            "achievements": [
+              "Reduced page load time from 4s to 1.2s",
+              "Built component library used by 12 teams",
+              "Migrated from Angular to React",
+              "Improved test coverage from 30% to 85%"
+            ]
+          }
+        ],
+        "skills": ["React", "TypeScript", "CSS", "Webpack", "Jest", "Cypress"],
+        "education": [
+          {"institution": "Online University", "degree": "BS Software Engineering", "field_of_study": "Software Engineering"}
+        ]
+      },
+      "profile_text": "Lisa Wang\nFrontend Engineer\n\n4 years building React applications.\n\nExperience:\n\nFrontend Engineer | DesignCo | 2020-Present\nBuilt user interfaces for design tool platform.\n- Reduced page load time from 4s to 1.2s\n- Built component library used by 12 teams\n- Migrated from Angular to React\n- Improved test coverage from 30% to 85%\n\nSkills: React, TypeScript, CSS, Webpack, Jest, Cypress\n\nEducation: BS Software Engineering - Online University",
+      "job": {
+        "title": "Senior Frontend Engineer",
+        "company_name": "WebApp Inc",
+        "description": "Build high-performance web applications.",
+        "requirements": ["React expertise", "Performance optimization", "Testing experience", "TypeScript"],
+        "tech_stack": ["React", "TypeScript", "Next.js", "Tailwind", "Playwright"]
+      },
+      "expectations": {
+        "all_bullets_under_15_words": true,
+        "trap": "run_on_sentences",
+        "min_dimensions": {
+          "conciseness": 75
+        },
+        "min_score": 70
+      }
+    },
+    {
+      "id": "buried-experience-trap",
+      "profile": {
+        "name": "Priya Sharma",
+        "headline": "Engineering Manager at FAANG",
+        "summary": "Led teams of 20+ engineers. Delivered products used by 100M+ users.",
+        "experience": [
+          {
+            "company": "MegaTech (FAANG)",
+            "position": "Engineering Manager",
+            "start_date": "2019",
+            "end_date": null,
+            "is_current": true,
+            "description": "Manage 3 teams (20 engineers total) building core infrastructure. P&L responsibility for $15M budget.",
+            "achievements": [
+              "Grew team from 5 to 20 engineers",
+              "Shipped product feature reaching 100M users",
+              "Reduced on-call incidents 60% through reliability program",
+              "Promoted 4 engineers to senior level"
+            ]
+          },
+          {
+            "company": "MidSize Corp",
+            "position": "Senior Software Engineer",
+            "start_date": "2015",
+            "end_date": "2019",
+            "is_current": false,
+            "description": "Backend development in Go and Python.",
+            "achievements": ["Built distributed caching layer", "Reduced infrastructure costs 35%"]
+          }
+        ],
+        "skills": ["Engineering Management", "Go", "Python", "System Design", "Hiring", "OKRs", "AWS"],
+        "education": [
+          {"institution": "MIT", "degree": "MS Computer Science", "field_of_study": "Distributed Systems"}
+        ]
+      },
+      "profile_text": "Priya Sharma\nEngineering Manager at FAANG\n\nLed teams of 20+ engineers. Delivered products used by 100M+ users.\n\nExperience:\n\nEngineering Manager | MegaTech (FAANG) | 2019-Present\nManage 3 teams (20 engineers total) building core infrastructure. P&L responsibility for $15M budget.\n- Grew team from 5 to 20 engineers\n- Shipped product feature reaching 100M users\n- Reduced on-call incidents 60% through reliability program\n- Promoted 4 engineers to senior level\n\nSenior Software Engineer | MidSize Corp | 2015-2019\nBackend development in Go and Python.\n- Built distributed caching layer\n- Reduced infrastructure costs 35%\n\nSkills: Engineering Management, Go, Python, System Design, Hiring, OKRs, AWS\n\nEducation: MS Computer Science (Distributed Systems) - MIT",
+      "job": {
+        "title": "VP of Engineering",
+        "company_name": "GrowthCo",
+        "description": "Lead our engineering organization through Series C growth.",
+        "requirements": ["10+ years engineering experience", "5+ years management", "Scaling teams", "Budget ownership", "Technical depth"],
+        "responsibilities": ["Own engineering roadmap", "Scale team from 30 to 100", "Report to CTO", "Drive technical excellence"]
+      },
+      "expectations": {
+        "first_experience_should_be": "Engineering Manager at MegaTech",
+        "should_lead_with": "team growth and $15M budget",
+        "trap": "buried_experience",
+        "min_dimensions": {
+          "narrative_hierarchy": 75
+        },
+        "min_score": 70
+      }
+    },
+    {
+      "id": "keyword-dilution-trap",
+      "profile": {
+        "name": "Chris Kim",
+        "headline": "Design Systems Lead",
+        "summary": "5 years specializing in design systems and component libraries.",
+        "experience": [
+          {
+            "company": "DesignPlatform",
+            "position": "Design Systems Lead",
+            "start_date": "2021",
+            "end_date": null,
+            "is_current": true,
+            "description": "Own the company's design system serving 200 developers. Built from scratch.",
+            "achievements": [
+              "Created design system adopted by 200 developers across 15 teams",
+              "Reduced UI inconsistencies 80% with automated style linting",
+              "Built accessible component library (WCAG 2.1 AA compliant)",
+              "Cut new feature development time 40% through reusable components"
+            ]
+          },
+          {
+            "company": "StartupUI",
+            "position": "Frontend Developer",
+            "start_date": "2019",
+            "end_date": "2021",
+            "is_current": false,
+            "description": "Built React components and contributed to early design system."
+          }
+        ],
+        "skills": ["React", "TypeScript", "Storybook", "Figma", "CSS-in-JS", "Accessibility", "Design Tokens"],
+        "education": [
+          {"institution": "Design University", "degree": "BFA Interaction Design", "field_of_study": "Interaction Design"}
+        ]
+      },
+      "profile_text": "Chris Kim\nDesign Systems Lead\n\n5 years specializing in design systems and component libraries.\n\nExperience:\n\nDesign Systems Lead | DesignPlatform | 2021-Present\nOwn the company's design system serving 200 developers. Built from scratch.\n- Created design system adopted by 200 developers across 15 teams\n- Reduced UI inconsistencies 80% with automated style linting\n- Built accessible component library (WCAG 2.1 AA compliant)\n- Cut new feature development time 40% through reusable components\n\nFrontend Developer | StartupUI | 2019-2021\nBuilt React components and contributed to early design system.\n\nSkills: React, TypeScript, Storybook, Figma, CSS-in-JS, Accessibility, Design Tokens\n\nEducation: BFA Interaction Design - Design University",
+      "job": {
+        "title": "Senior Frontend Engineer",
+        "company_name": "BigTech Co",
+        "description": "Join our frontend platform team.",
+        "requirements": [
+          "React expertise", "TypeScript", "Performance optimization",
+          "GraphQL", "Node.js backend", "CI/CD pipelines",
+          "Kubernetes", "AWS", "Monitoring/observability",
+          "Database design"
+        ],
+        "tech_stack": ["React", "TypeScript", "GraphQL", "Node.js", "Kubernetes", "AWS", "Datadog"]
+      },
+      "expectations": {
+        "should_focus_on": ["React expertise", "TypeScript", "design systems as platform work"],
+        "should_NOT_scatter": "keywords for GraphQL, Kubernetes, AWS, databases when candidate has no experience",
+        "trap": "keyword_dilution",
+        "min_dimensions": {
+          "narrative_coherence": 75
+        },
+        "min_score": 65
       }
     }
   ]

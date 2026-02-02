@@ -19,7 +19,7 @@ from document_parser import DocumentParser, DocumentParserError  # type: ignore
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 # Initialize document parser
 parser = DocumentParser()

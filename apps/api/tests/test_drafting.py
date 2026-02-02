@@ -247,8 +247,8 @@ class TestResumeValidation:
         assert result.checks["education_section"] is False
 
     def test_validate_summary_too_long(self):
-        """Test validation fails with summary over 100 words."""
-        long_summary = " ".join(["word"] * 150)
+        """Test validation fails with summary over 50 words."""
+        long_summary = " ".join(["word"] * 60)
         html = f"""
         <h1>John Doe</h1>
 
@@ -269,7 +269,7 @@ class TestResumeValidation:
 
         assert result.valid is False
         assert result.checks["summary_length"] is False
-        assert "100" in result.errors[0]
+        assert "50" in result.errors[0]
 
     def test_validate_action_verbs(self):
         """Test action verb validation in bullet points."""

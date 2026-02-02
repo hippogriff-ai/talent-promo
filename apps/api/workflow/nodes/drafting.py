@@ -42,7 +42,7 @@ def _extract_content_from_code_block(content: str, language: str = "json") -> st
     return content.strip()
 
 
-def get_llm(temperature: float = 0.4):
+def get_llm(temperature: float = 0.3):
     """Get configured LLM for resume drafting."""
     return ChatAnthropic(
         model=settings.anthropic_model,
@@ -52,29 +52,105 @@ def get_llm(temperature: float = 0.4):
     )
 
 
-RESUME_DRAFTING_PROMPT = """You are an elite resume writer specializing in ATS-optimized, high-impact resumes.
+RESUME_DRAFTING_PROMPT = """You are an elite resume writer. Your sole job: get this person an interview.
 
-CORE PRINCIPLES:
-1. CONCISE: Every bullet under 18 words. Professional summary under 40 words (2-3 sentences).
-2. IMPACTFUL: Every bullet = Action Verb + Achievement + Metric + Tech/Scale
-3. TAILORED: Address ALL job requirements. Integrate keywords naturally.
-4. POLISHED: Zero filler words. Zero passive voice. Professional but not stiff.
+53% of hiring managers have reservations about AI-generated resumes. 33.5% spot them in under 20 seconds. Authenticity is your competitive advantage.
 
-BULLET EXAMPLES (follow this style):
-✓ "Led microservices migration using Kubernetes, cutting deployment time 75%"
-✓ "Built React analytics dashboard serving 50K daily users"
-✓ "Drove $2M ARR growth launching enterprise SSO feature"
-✗ "Responsible for various initiatives" (vague)
-✗ "Successfully implemented improvements" (wordy, no metrics)
+CORE PRINCIPLES (in priority order):
 
-SUMMARY FORMULA: [Role] with [X years] in [expertise]. [Key achievement + metric]. [Value for THIS role].
+1. FAITHFUL — overrides everything else
+   - NEVER merge distinct experience scopes ("6yr backend + 1yr AI" stays separate, never "7yr AI")
+   - NEVER invent metrics not in the source material
+   - Reframing WORDING is fine; reframing SCOPE, SCALE, or TIMEFRAME is fabrication
+   - If the source says "helped with" do not upgrade to "led" or "drove"
+   - NEVER attribute employer's scale to the candidate's individual work.
+     The company may serve millions, but the candidate's specific project may serve a team of 23.
+     Only use scale language ("serving millions", "at scale") if the source explicitly says
+     the candidate's own work operates at that scale.
+   - BAD: Source says "1 year ML side projects" → resume says "6+ years AI/ML experience"
+   - BAD: Source says "contributed to migration" → resume says "Led migration"
+   - BAD: Employer serves 2M users → summary says "serving 2M users" (that's the company, not the candidate)
+   - NEVER add technologies/tools the candidate doesn't mention in their source material.
+     If the job says "Kubernetes" but the source only mentions Docker, write "Docker" not "Kubernetes".
+     Only include tools actually listed in the candidate's profile/resume.
+   - GOOD: Source says "built internal tool" → resume says "Built internal automation tool"
+   - GOOD: Source says "company serves 2M users" + candidate "built search feature" → "Built search feature for legal platform"
+
+2. CONCISE — every bullet MUST be under 15 words, no exceptions
+   - One achievement per bullet. Never join two ideas with "and", "while", or "resulting in"
+   - Use the XYZ formula: "Accomplished [X] as measured by [Y] by doing [Z]"
+   - BAD: "Led migration to microservices while mentoring 3 engineers and cutting deploy time 75%" (3 ideas)
+   - GOOD: "Cut deploy time 75% via microservices migration" (8 words, 1 idea)
+   - GOOD: "Mentored 3 junior engineers to production readiness" (7 words, 1 idea)
+   - Professional summary: 2-3 sentences, under 40 words total
+
+3. HIERARCHY-PRESERVING — respect the candidate's story
+   - Keep their most prominent experience most prominent
+   - Do NOT reorder roles to chase job keywords
+   - Lead each role with THEIR strongest achievement, not what the job posting wants most
+   - The candidate's identity comes through; this is THEIR resume, not a keyword-matching exercise
+
+4. FOCUSED — depth over breadth, with job-specific evidence
+   - Identify the top 3-5 job requirements. For EACH, include at least one bullet with specific evidence.
+   - A resume that strongly matches 4 requirements beats one that weakly touches 10
+   - Where the candidate has matching experience, use the job posting's technology names
+     (e.g., if both the candidate and job mention containers, prefer "Kubernetes" from the job posting)
+     But NEVER add technologies the candidate doesn't actually use — that violates FAITHFUL.
+   - Include ALL metrics and numbers from the source material — percentages, team sizes, user counts, timeframes.
+     If the source says "reduced latency 40%", include that. If it says "team of 5", include that.
+   - If no metric exists in the source, DON'T INVENT ONE. A specific-but-unquantified bullet
+     ("Built caching layer using Redis" — 6 words, named tech) is better than a fabricated number.
+   - When the candidate matches only 3-4 of many requirements, write ONLY to those 3-4 with deep evidence.
+     Do NOT fabricate or stretch bullets for non-matching requirements. Silence is better than a weak claim.
+     A focused specialist always beats a stretched generalist.
+   - For each matched requirement, provide the STRONGEST available evidence: named technology + specific
+     outcome or context. One deeply-evidenced bullet per requirement is the minimum bar.
+   - Maintain a coherent narrative (one story about who this person is)
+   - BAD: "Experienced in cloud computing and DevOps practices" (no evidence, vague)
+   - BAD: Inventing "serving 50M users" when the source doesn't mention that scale
+   - BAD: Scattering unrelated keywords across bullets to touch every requirement
+   - BAD: Writing bullets for requirements the candidate has NO matching experience for
+   - GOOD: "Cut deploy time from 2hr to 15min using GitHub Actions + Docker" (source metric + job tech)
+   - GOOD: "Built caching layer with Redis for product search" (specific, names tech, no invented metric)
+   - GOOD: Ignoring 6 requirements to deeply address 4 matching ones
+
+5. POLISHED — sound human, not AI
+   - Zero filler: no "various", "multiple", "diverse", "dynamic", "robust", "innovative"
+   - Zero AI-tells: no "spearheaded", "orchestrated", "revolutionized", "leveraged", "delve",
+     "seamless", "holistic", "synergy", "utilize", "cutting-edge", "pivotal", "streamline"
+   - NEVER use these phrases: "proven track record", "results-driven", "passionate about",
+     "dynamic team player", "exceptional communication". These are the #1 AI fingerprint.
+   - Zero passive voice: no "was responsible for", "was involved in"
+   - Use plain strong verbs: Built, Led, Cut, Grew, Shipped, Fixed, Designed, Launched
+   - NEVER use em dashes (—) or en dashes (–). Use commas, colons, or rewrite the sentence.
+     Em dashes are the #1 typographic AI fingerprint.
+     BAD: "Led migration — reducing deploy time 75%"
+     GOOD: "Led migration, reducing deploy time 75%"
+   - Vary bullet opening verbs. NEVER start 3+ bullets with the same word.
+     BAD: "Built API… Built caching… Built monitoring…"
+     GOOD: "Built API… Designed caching… Launched monitoring…"
+   - Vary bullet rhythm: mix short punchy bullets (5-7 words) with longer ones (12-15 words).
+     If 3+ consecutive bullets have the same word count, rewrite one shorter or longer.
+
+AUTHENTICITY MARKERS — include these when the source material supports them:
+- Before/after context for metrics: "from 3.2s to 0.8s" not just "reduced 75%"
+- Constraints and trade-offs: "despite legacy codebase", "within 3-month deadline"
+  (Only include if the source mentions them — NEVER invent constraints)
+- Specific details only the candidate would know: "tool used by 23 team members daily"
+- Named technologies, not categories: "Redis" not "caching solution", "React" not "frontend framework"
+- These details signal truth because they're hard to fake.
 
 SENIORITY POSITIONING:
-- Senior/Director roles: Lead with strategic impact, team size, business outcomes
-- Mid-level roles: Balance individual contributions with collaboration
-- Entry roles: Emphasize learning velocity and concrete project results
+- Senior/Director: Strategic impact, team size, business outcomes
+- Mid-level: Balance individual contributions with collaboration
+- Entry/Junior: Learning velocity, concrete project results, specific technologies
+  (never use "spearheaded cross-functional strategy" for entry-level — scope must match seniority)
 
-GAP HANDLING: Reframe adjacent experience to match requirements. Never fabricate.
+GAP HANDLING:
+- Connect adjacent experience to requirements using WORDING only
+- GOOD: "Built data pipelines in Python" (if they did build data pipelines)
+- BAD: "Led enterprise AI initiatives" (if they did Python scripting, not AI leadership)
+- When a gap is real, leave it out. Better to be honest than to stretch.
 
 USER STYLE PREFERENCES (apply if provided):
 - Tone: formal/conversational/confident/humble
@@ -88,50 +164,59 @@ OUTPUT FORMAT (HTML for Tiptap editor):
 <p>[Contact info: email | phone | location | LinkedIn]</p>
 
 <h2>Professional Summary</h2>
-<p>[2-3 sentences: (1) Role + years of experience + key expertise, (2) Standout achievement with metric, (3) What you bring to THIS specific role]</p>
+<p>[2-3 sentences, under 40 words. Formula: "[Role] with [N] years [THEIR actual core expertise — NOT the target job's domain]. [Best metric achievement]. [What they bring to THIS role]."
+CRITICAL: [N] years must match their ACTUAL years in that specific domain, not total career years.
+BAD: "8+ years building AI-powered products" when source shows 8yr SWE + 1yr AI.
+GOOD: "Full-stack engineer with 8 years of software development. Shipped AI assistant from POC to production in one week."
+Be specific, not generic.]</p>
 
 <h2>Experience</h2>
 <h3>[Job Title] | [Company] | [Dates]</h3>
 <ul>
-<li>[Action verb + achievement + metric + tools/scale, e.g., "Led migration to microservices using Kubernetes, reducing deployment time 75%"]</li>
-<li>[Action verb + achievement + metric + tools/scale]</li>
+<li>[Under 15 words. XYZ: Accomplished X, measured by Y, by doing Z]</li>
+<li>[3-5 bullets per role. Most recent role gets most detail.]</li>
 </ul>
 
 <h2>Education</h2>
 <p><strong>[Degree]</strong> - [Institution], [Year]</p>
 
 <h2>Skills</h2>
-<p>[Comma-separated skills, prioritized by relevance to target job]</p>
+<p>[Group by category: Languages: Python, Go, TypeScript | Frameworks: React, FastAPI | Cloud: AWS, GCP. Prioritize by relevance to target job.]</p>
 
 <h2>Certifications</h2>
 <ul>
-<li>[Certification name]</li>
+<li>[Certification name — only if relevant]</li>
 </ul>
 
-BEFORE OUTPUTTING, verify:
-1. Professional summary is 2-3 sentences, under 40 words
-2. Every bullet starts with a strong action verb (Led, Built, Drove, Increased, etc.)
-3. Every bullet has a quantified metric (%, $, #, time saved, etc.)
-4. No bullet exceeds 20 words
-5. All job requirements from the posting are addressed
-6. Keywords are naturally integrated, not stuffed
+BEFORE OUTPUTTING, verify each:
+1. FIDELITY: Every claim traceable to source material. No merged scopes. No invented metrics.
+2. SCALE ATTRIBUTION: Summary years match actual domain years (not total career). No employer-scale claims on individual work.
+3. CONCISENESS: Every bullet under 15 words. No compound bullets. Summary under 40 words.
+4. HIERARCHY: Candidate's most prominent role is still most prominent. Top achievements lead.
+5. COHERENCE: Resume tells one clear story. Not scattered keyword coverage.
+6. FOCUS: Top 3-5 requirements addressed deeply. Others left alone.
+7. ACTION VERBS: Every bullet starts with a strong verb (Built, Led, Cut, Grew, Shipped, etc.)
+8. HUMAN VOICE: No AI-tell words. No filler. No em dashes. Varied rhythm. Varied bullet openings (no 3+ starting with same verb). 3-5 bullets per role. Include before/after context and constraints where the source supports them.
+9. SENIORITY: Language matches candidate's level. Entry-level doesn't say "led cross-functional strategy."
 
-Make sure the HTML is clean and well-formatted for a rich text editor."""
+Output clean HTML only. No markdown. No code fences."""
 
 
-SUGGESTION_GENERATION_PROMPT = """You are an expert resume consultant reviewing a resume draft for a specific job application.
+SUGGESTION_GENERATION_PROMPT = """You are an expert resume consultant. 53% of hiring managers distrust AI-generated resumes.
 
-Analyze this resume and generate 3-5 specific improvement suggestions. Focus on:
-1. Making achievements more quantifiable
-2. Better keyword alignment with the job posting
-3. Strengthening weak bullet points
-4. Improving the professional summary
-5. Better highlighting relevant experience
+Review this resume draft and generate 3-5 specific improvements. Prioritize:
+1. Adding before/after context to metrics ("reduced from 3.2s to 0.8s" beats "reduced 75%")
+2. Replacing AI-tell words (leverage, spearhead, orchestrate, etc.) with plain verbs
+3. Splitting compound bullets (>15 words or two ideas joined by "and"/"while")
+4. Adding specificity: named technologies, team sizes, user counts, constraints
+5. Fixing seniority mismatch (entry-level using "led cross-functional strategy")
 
-For each suggestion, identify:
+NEVER suggest changes that fabricate metrics or merge experience scopes.
+
+For each suggestion, provide:
 - The exact text to change (original_text)
-- Your proposed improvement (proposed_text)
-- Why this change improves the resume (rationale)
+- Your improved version (proposed_text) — must be under 15 words for bullets
+- Why this is better (rationale)
 - Where in the resume (location): "summary", "experience.0", "skills", etc.
 
 OUTPUT FORMAT (JSON array):
@@ -148,17 +233,22 @@ Only output the JSON array, no other text."""
 
 
 # Action verb list for validation
+# Excludes AI-tell verbs (spearheaded, orchestrated, streamlined, leveraged, etc.)
+# to stay consistent with the POLISHED principle in the prompt.
 ACTION_VERBS = {
     "achieved", "accomplished", "accelerated", "administered", "analyzed",
-    "built", "collaborated", "created", "delivered", "designed", "developed",
-    "directed", "enhanced", "established", "executed", "expanded", "facilitated",
-    "generated", "grew", "guided", "handled", "implemented", "improved",
-    "increased", "initiated", "introduced", "launched", "led", "maintained",
-    "managed", "maximized", "minimized", "negotiated", "optimized", "orchestrated",
-    "organized", "oversaw", "pioneered", "planned", "produced", "promoted",
-    "provided", "reduced", "redesigned", "resolved", "restructured", "revamped",
-    "saved", "secured", "simplified", "spearheaded", "streamlined", "strengthened",
-    "supervised", "transformed", "upgraded"
+    "automated", "built", "co-led", "collaborated", "configured", "consolidated",
+    "created", "cut", "debugged", "delivered", "deployed", "designed", "developed",
+    "directed", "eliminated", "enhanced", "established", "executed", "expanded",
+    "fixed", "generated", "grew", "guided", "handled", "implemented", "improved",
+    "increased", "initiated", "integrated", "introduced", "launched", "led",
+    "maintained", "managed", "maximized", "migrated", "minimized", "negotiated",
+    "optimized", "organized", "oversaw", "partnered", "piloted", "planned",
+    "produced", "promoted", "prototyped", "provided", "rebuilt", "reduced",
+    "redesigned", "refactored", "resolved", "restructured", "revamped",
+    "saved", "scaled", "secured", "shipped", "simplified", "strengthened",
+    "supervised", "taught", "tested", "trained", "transformed", "upgraded",
+    "wrote",
 }
 
 
@@ -240,6 +330,13 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
         )
         if validation_results["sanitized"]:
             logger.warning("Resume HTML was sanitized to remove problematic patterns")
+
+        # Run programmatic quality checks (bullet length, AI-tells, scope conflation, etc.)
+        quality_result = validate_resume(resume_html, source_text=profile_text, job_text=job_text)
+        validation_results["quality_checks"] = quality_result.checks
+        validation_results["warnings"].extend(quality_result.warnings)
+        if quality_result.errors:
+            validation_results["warnings"].extend(quality_result.errors)
 
         # Create initial version
         initial_version = DraftVersion(
@@ -348,89 +445,8 @@ FULL JOB POSTING (use this as the primary source):
 
 ---
 
-GAP ANALYSIS RECOMMENDATIONS:
-
-Strengths to Emphasize:
-{chr(10).join('- ' + s for s in gap_analysis.get('strengths', []))}
-
-Areas to Address:
-{chr(10).join('- ' + g for g in gap_analysis.get('gaps', []))}
-
-What to Highlight:
-{chr(10).join('- ' + e for e in gap_analysis.get('recommended_emphasis', []))}
-
-Keywords to Include: {', '.join(gap_analysis.get('keywords_to_include', []))}
-
----
-
-ADDITIONAL INFORMATION FROM INTERVIEW:
-{_format_qa_for_draft(qa_history)}
-
----
-
-DISCOVERED EXPERIENCES (from discovery conversation):
-{_format_discovered_experiences(discovered_experiences)}
-
----
-
-COMPANY INSIGHTS:
-Culture: {research.get('company_culture', 'N/A')[:500] if research else 'N/A'}
-Values: {', '.join(research.get('company_values', [])) if research else 'N/A'}
-
----
-
-{prefs_section}
-"""
-    return context
-
-
-def _build_drafting_context(
-    user_profile: dict,
-    job_posting: dict,
-    gap_analysis: dict,
-    qa_history: list,
-    research: dict,
-    discovered_experiences: list,
-    user_preferences: dict | None = None,
-) -> str:
-    """Build comprehensive context for resume drafting (legacy structured version)."""
-    # Format user preferences section
-    prefs_section = _format_user_preferences(user_preferences)
-
-    context = f"""
-CANDIDATE INFORMATION:
-Name: {user_profile.get('name', 'Candidate')}
-Email: {user_profile.get('email', '')}
-Phone: {user_profile.get('phone', '')}
-Location: {user_profile.get('location', '')}
-LinkedIn: {user_profile.get('linkedin_url', '')}
-
-Current Headline: {user_profile.get('headline', '')}
-Current Summary: {user_profile.get('summary', '')}
-
-WORK EXPERIENCE:
-{_format_experience_for_draft(user_profile.get('experience', []))}
-
-EDUCATION:
-{_format_education_for_draft(user_profile.get('education', []))}
-
-SKILLS: {', '.join(user_profile.get('skills', []))}
-
-CERTIFICATIONS: {', '.join(user_profile.get('certifications', []))}
-
----
-
-TARGET JOB:
-Title: {job_posting.get('title', '')}
-Company: {job_posting.get('company_name', '')}
-
-Job Description:
-{job_posting.get('description', '')[:2000]}
-
-Requirements:
-{chr(10).join('- ' + r for r in job_posting.get('requirements', []))}
-
-Tech Stack to highlight: {', '.join(job_posting.get('tech_stack', []))}
+TOP REQUIREMENTS TO ADDRESS (include specific evidence for each):
+{_format_top_requirements(job_posting, gap_analysis)}
 
 ---
 
@@ -528,14 +544,417 @@ Generate 3-5 specific, actionable suggestions to improve this resume for the tar
         return []
 
 
-def validate_resume(html_content: str) -> DraftValidationResult:
+# AI-tell words and phrases that signal AI-generated content
+# Source: Research on hiring manager detection patterns
+AI_TELL_WORDS = {
+    "delve", "leverage", "leveraged", "leveraging", "pivotal", "seamless",
+    "seamlessly", "holistic", "synergy", "synergies", "robust", "streamline",
+    "streamlined", "streamlining", "spearheaded", "orchestrated",
+    "revolutionized", "utilize", "utilized", "utilizing", "innovative",
+    "cutting-edge", "dynamic", "passionate",
+}
+
+AI_TELL_PHRASES = [
+    "proven track record", "results-driven", "results driven",
+    "dynamic team player", "exceptional communication",
+    "passionate about", "driving innovation", "cross-functional collaboration",
+    "demonstrated adaptability", "diverse range", "various tools",
+    "multiple technologies", "different projects",
+]
+
+GENERIC_FILLER_WORDS = {
+    "various", "multiple", "diverse", "exceptional", "outstanding",
+    "remarkable", "comprehensive",
+}
+
+
+def detect_ai_tells(text: str) -> list[str]:
+    """Detect AI-tell words and phrases in resume text.
+
+    Returns list of found AI-tell words/phrases. Empty list = clean.
+    """
+    found = []
+    lower_text = text.lower()
+
+    for word in AI_TELL_WORDS:
+        if re.search(rf'\b{re.escape(word)}\b', lower_text):
+            found.append(word)
+
+    for phrase in AI_TELL_PHRASES:
+        if phrase in lower_text:
+            found.append(phrase)
+
+    return found
+
+
+def _count_em_dashes(text: str) -> int:
+    """Count em dashes (—) and en dashes (–) in text.
+
+    Excessive use is the #1 typographic AI-generation signal.
+    """
+    return text.count("\u2014") + text.count("\u2013")
+
+
+def _detect_repetitive_bullet_openings(bullets: list[str]) -> list[str]:
+    """Find verbs that start 3+ bullets. Repetitive openings signal AI generation.
+
+    Returns list of words that appear as the first word of 3+ bullets.
+    """
+    from collections import Counter
+    first_words: list[str] = []
+    for bullet in bullets:
+        clean = re.sub(r'<[^>]+>', '', bullet).strip()
+        words = clean.split()
+        if words:
+            first_words.append(words[0].lower())
+    counts = Counter(first_words)
+    return [word for word, count in counts.items() if count >= 3]
+
+
+def _count_bullets_per_role(html_content: str) -> list[tuple[str, int]]:
+    """Extract role titles and their bullet counts.
+
+    Returns list of (role_title, bullet_count) tuples.
+    Research says 3-5 bullets per role is optimal.
+    """
+    role_sections = re.split(r'<h3[^>]*>', html_content)
+    results = []
+    for section in role_sections[1:]:  # Skip content before first h3
+        title_match = re.match(r'(.*?)</h3>', section, re.DOTALL)
+        title = re.sub(r'<[^>]+>', '', title_match.group(1)).strip() if title_match else "Unknown"
+        bullets = re.findall(r'<li[^>]*>.*?</li>', section, re.DOTALL)
+        results.append((title, len(bullets)))
+    return results
+
+
+def _has_quantified_metric(text: str) -> bool:
+    """Check if a bullet contains a quantifiable metric.
+
+    Looks for numbers, percentages, dollar amounts, multipliers, and time units.
+    Research says 80%+ of bullets should include quantified results.
+    """
+    metric_patterns = [
+        r'\d+%',                      # percentages: 40%, 3.5%
+        r'\$[\d,.]+[KMBkmb]?',        # dollar amounts: $1.2M, $500K
+        r'\d+[xX]\b',                 # multipliers: 3x, 10X
+        r'\b\d+[KMBkmb]\b',          # shorthand numbers: 10K, 1.2M
+        r'\b\d+\+?\s*(?:users?|customers?|engineers?|people|team members?|employees?|clients?|requests?|transactions?)',  # counts with units
+        r'\b\d+\s*(?:ms|seconds?|minutes?|hours?|days?|weeks?|months?)',  # time units
+        r'\bfrom\s+\S+\s+to\s+\S+',  # before/after: "from 3.2s to 0.8s"
+        r'\b\d{2,}\b',               # any number >= 10 (filters out single digits in words)
+    ]
+    for pattern in metric_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    return False
+
+
+def _has_rhythm_variation(word_counts: list[int]) -> bool:
+    """Check if bullet word counts have enough variation to sound human.
+
+    AI-generated resumes often have uniform sentence structure where 3+
+    consecutive bullets have the same word count. Research says hiring managers
+    spot this "too polished" cadence in under 20 seconds.
+
+    Returns True if rhythm is varied enough. False means too uniform.
+    """
+    if len(word_counts) < 3:
+        return True  # Too few bullets to judge
+
+    # Check for 3+ consecutive bullets with same word count (±1 word tolerance)
+    for i in range(len(word_counts) - 2):
+        window = word_counts[i:i + 3]
+        avg = sum(window) / len(window)
+        if all(abs(wc - avg) <= 1 for wc in window):
+            return False
+
+    return True
+
+
+def _detect_summary_years_claim(summary_text: str) -> list[tuple[int, str]]:
+    """Extract 'N+ years [domain]' claims from summary text.
+
+    Returns list of (years, domain) tuples found in the summary.
+    Used to cross-check against source material for scope conflation.
+    """
+    claims = []
+    patterns = [
+        # "8+ years building AI-powered products"
+        r'(\d+)\+?\s+years?\s+(?:of\s+)?(?:experience\s+(?:in|with)\s+)?(.+?)(?:\.|,|and\s|$)',
+        # "8 years of AI experience"
+        r'(\d+)\+?\s+years?\s+(?:of\s+)?(.+?)\s+experience',
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, summary_text, re.IGNORECASE):
+            years = int(match.group(1))
+            domain = match.group(2).strip().rstrip('.')
+            if years >= 3 and len(domain) > 2:
+                claims.append((years, domain))
+    return claims
+
+
+def _check_years_domain_grounded(
+    years: int, domain: str, source_text: str
+) -> bool:
+    """Check if a 'N years [domain]' claim is supported by the source text.
+
+    Returns True if the claim appears grounded, False if likely conflated.
+
+    Heuristic: extract key domain words and check if they appear frequently
+    enough in the source to justify the year count. If the domain keyword
+    appears only once but the years claim spans the whole career,
+    it's likely conflation.
+    """
+    if not source_text or not domain:
+        return True  # Can't verify without source
+
+    source_lower = source_text.lower()
+    domain_lower = domain.lower()
+
+    # Common abbreviation expansions for tech domains
+    abbreviations = {
+        "ai": ["artificial intelligence", "ai"],
+        "ml": ["machine learning", "ml"],
+        "nlp": ["natural language processing", "nlp"],
+        "dl": ["deep learning", "dl"],
+        "devops": ["devops", "dev ops"],
+        "sre": ["site reliability", "sre"],
+    }
+
+    # Extract key domain words (skip common filler)
+    filler = {"and", "the", "a", "an", "in", "of", "for", "with", "at", "to",
+              "on", "by", "is", "are", "was", "were", "be", "been", "being",
+              "have", "has", "had", "do", "does", "did", "will", "would",
+              "could", "should", "may", "might", "shall", "can", "that",
+              "this", "these", "those", "their", "our", "my", "your",
+              "its", "all", "each", "every", "both", "few", "more", "most",
+              "other", "some", "such", "no", "not", "only", "own", "same",
+              "so", "than", "too", "very", "just", "also", "building",
+              "built", "creating", "developing", "working", "doing"}
+    domain_words = [w for w in domain_lower.split() if w not in filler and len(w) > 2]
+
+    if not domain_words:
+        return True
+
+    # Check generic domains that are always fine (broad career descriptions)
+    generic_domains = {
+        "software", "engineering", "development", "programming",
+        "software engineering", "software development", "web development",
+        "full-stack", "fullstack", "backend", "frontend", "full stack",
+    }
+    if domain_lower in generic_domains or all(w in generic_domains for w in domain_words):
+        return True
+
+    # Check abbreviation expansions at the domain level
+    # e.g., domain "machine learning" should also count "ML" in source
+    alias_words = set()
+    for abbrev, expansions in abbreviations.items():
+        for expansion in expansions:
+            if expansion in domain_lower or domain_lower in expansion:
+                # Add all variants as aliases to search for
+                alias_words.add(abbrev)
+                for exp in expansions:
+                    for w in exp.split():
+                        if w not in filler and len(w) > 2:
+                            alias_words.add(w)
+
+    # Count occurrences of domain keywords + aliases in source
+    all_search_words = set(domain_words) | alias_words
+    domain_mentions = 0
+    for word in all_search_words:
+        domain_mentions += len(re.findall(rf'\b{re.escape(word)}\b', source_lower))
+
+    # If domain keywords appear < 2 times but years claim is 5+, flag it
+    # This catches "8+ years AI" when AI only appears once in the source
+    if years >= 5 and domain_mentions < 2:
+        return False
+
+    return True
+
+
+def _detect_ungrounded_scale(resume_text: str, source_text: str) -> list[str]:
+    """Detect scale claims in the resume that don't appear in source material.
+
+    Catches cases where employer's scale is attributed to the candidate,
+    e.g., 'serving millions of users' when the source never says the
+    candidate's work served millions.
+
+    Returns list of flagged scale claims.
+    """
+    if not source_text:
+        return []
+
+    source_lower = source_text.lower()
+    resume_lower = resume_text.lower()
+    flagged = []
+
+    scale_patterns = [
+        (r'serving\s+(?:\d+\s*)?(?:millions?|thousands?|billions?)\s+(?:of\s+)?(?:users?|customers?|clients?)', "serving [scale] users"),
+        (r'(?:impacting|reaching|supporting)\s+(?:\d+\s*)?(?:millions?|thousands?|billions?)\s+(?:of\s+)?(?:users?|customers?|clients?)', "impacting [scale] users"),
+        (r'(?:serving|reaching|impacting)\s+\d+[MBmb]\+?\s+(?:users?|customers?|clients?)', "serving N+ users"),
+        (r'at\s+(?:enterprise\s+)?scale', "at scale"),
+        (r'(?:to|for)\s+(?:millions?|thousands?|billions?)\s+(?:of\s+)?(?:users?|people|customers?)', "to millions of users"),
+    ]
+
+    for pattern, label in scale_patterns:
+        matches = re.findall(pattern, resume_lower)
+        if matches:
+            # Check if this scale language appears in the source too
+            source_matches = re.findall(pattern, source_lower)
+            if not source_matches:
+                flagged.append(label)
+
+    return flagged
+
+
+def _is_compound_bullet(text: str) -> bool:
+    """Detect compound bullets that join two achievements.
+
+    Only flags when bullet is >12 words AND contains a conjunction joining
+    two verb phrases. Short bullets like "Built and deployed API" are fine.
+    """
+    words = text.split()
+    if len(words) <= 12:
+        return False
+
+    # Check for conjunction patterns joining two verb phrases
+    compound_patterns = [
+        r'\b\w+ed\b.*\band\b.*\b\w+(?:ed|ing)\b',  # "Reduced X and improved Y"
+        r'\b\w+ed\b.*\bwhile\b.*\b\w+ing\b',         # "Built X while managing Y"
+        r'\b\w+ed\b.*\bresulting in\b',                # "Implemented X resulting in Y"
+        r'\b\w+ed\b.*\b,\s*\w+ing\b',                 # "Led X, reducing Y"
+    ]
+    for pattern in compound_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    return False
+
+
+def _extract_experience_years(html_content: str) -> list[tuple[str, int | None]]:
+    """Extract experience entries and their most recent year from resume HTML.
+
+    Returns a list of (role_text, year) tuples where year is the start/most-recent
+    year of that role, or None if no year found. Used to verify reverse chronological order.
+    """
+    entries = re.findall(r'<h3[^>]*>(.*?)</h3>', html_content, re.IGNORECASE | re.DOTALL)
+    results = []
+    for entry in entries:
+        clean = re.sub(r'<[^>]+>', '', entry).strip()
+        # Look for years: "2020-Present", "2020-2023", "Jan 2020 - Present", etc.
+        # We want the START year of each role for chronological ordering
+        year_matches = re.findall(r'\b(20\d{2})\b', clean)
+        if year_matches:
+            # The most recent year in the entry is typically the start year or end year
+            # For ordering, we use the max year (end date or "Present" implies current)
+            if "present" in clean.lower() or "current" in clean.lower():
+                results.append((clean, 9999))  # Current role sorts first
+            else:
+                results.append((clean, max(int(y) for y in year_matches)))
+        else:
+            results.append((clean, None))
+    return results
+
+
+def _extract_job_keywords(job_text: str) -> list[str]:
+    """Extract key terms from a job posting for keyword coverage checking.
+
+    Extracts technology names, tools, skills, and key phrases that a
+    tailored resume should mention. Filters out generic words.
+
+    Returns a deduplicated list of lowercase keywords/phrases.
+    """
+    if not job_text:
+        return []
+
+    # Common filler words to skip
+    stop_words = {
+        "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+        "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "must", "shall", "can", "need", "our", "we",
+        "you", "your", "they", "their", "this", "that", "it", "its", "as",
+        "if", "not", "no", "so", "up", "out", "about", "into", "over",
+        "after", "before", "between", "under", "above", "all", "each",
+        "every", "both", "few", "more", "most", "other", "some", "such",
+        "than", "too", "very", "just", "also", "how", "what", "when",
+        "where", "who", "which", "while", "during", "through", "across",
+        "ability", "experience", "strong", "excellent", "work", "working",
+        "team", "role", "position", "company", "including", "etc", "e.g",
+        "i.e", "plus", "well", "new", "year", "years", "minimum", "preferred",
+        "required", "requirements", "responsibilities", "qualifications",
+        "ideal", "candidate", "looking", "join", "opportunity",
+    }
+
+    text_lower = job_text.lower()
+    keywords = set()
+
+    # 1. Extract technology/tool names (capitalized words, acronyms, versioned names)
+    # Match patterns like "React", "AWS", "Python 3", "Node.js", "CI/CD"
+    tech_patterns = [
+        r'\b[A-Z][a-z]+(?:\.[a-z]+)?\b',           # React, Node.js
+        r'\b[A-Z]{2,}\b',                            # AWS, GCP, CI/CD
+        r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b',     # Machine Learning, Google Cloud
+    ]
+    for pattern in tech_patterns:
+        for match in re.finditer(pattern, job_text):
+            term = match.group().strip()
+            if term.lower() not in stop_words and len(term) > 1:
+                keywords.add(term.lower())
+
+    # 2. Extract quoted terms (often important requirements)
+    for match in re.finditer(r'"([^"]{2,30})"', job_text):
+        keywords.add(match.group(1).lower())
+
+    # 3. Extract terms after "experience with/in", "proficiency in", "knowledge of"
+    skill_patterns = [
+        r'(?:experience\s+(?:with|in)|proficiency\s+in|knowledge\s+of|familiarity\s+with|expertise\s+in)\s+([A-Za-z0-9/\s,]+?)(?:\.|,\s*(?:and|or)|$)',
+    ]
+    for pattern in skill_patterns:
+        for match in re.finditer(pattern, text_lower):
+            terms = match.group(1).split(",")
+            for term in terms:
+                term = term.strip().strip("and ").strip("or ").strip()
+                if term and term not in stop_words and len(term) > 2:
+                    keywords.add(term)
+
+    # 4. Extract common tech terms that appear as plain words
+    common_tech = {
+        "python", "javascript", "typescript", "java", "go", "rust", "ruby",
+        "c++", "c#", "swift", "kotlin", "scala", "php", "sql", "nosql",
+        "react", "angular", "vue", "next.js", "node.js", "express",
+        "django", "flask", "fastapi", "spring", "rails",
+        "aws", "azure", "gcp", "docker", "kubernetes", "terraform",
+        "postgresql", "mysql", "mongodb", "redis", "elasticsearch",
+        "graphql", "rest", "grpc", "kafka", "rabbitmq",
+        "ci/cd", "devops", "mlops", "agile", "scrum",
+        "machine learning", "deep learning", "nlp", "computer vision",
+        "microservices", "distributed systems", "data pipeline",
+    }
+    for tech in common_tech:
+        if tech in text_lower:
+            keywords.add(tech)
+
+    # Filter out very short or generic results
+    return [k for k in keywords if len(k) > 1]
+
+
+def validate_resume(html_content: str, source_text: str = "", job_text: str = "") -> DraftValidationResult:
     """Validate resume draft against quality criteria.
 
     Checks:
-    - Summary exists and <= 100 words
+    - Summary exists and <= 50 words
     - At least 1 experience entry
     - Bullets start with action verbs
-    - Skills section exists with categories
+    - Bullet word count <= 15 words
+    - No compound bullets (two achievements joined)
+    - Quantification rate >= 50% (research target: 80%+)
+    - AI-tell words/phrases absent
+    - Rhythm variation (no 3+ uniform-length consecutive bullets)
+    - Summary years+domain grounded in source (scope conflation detection)
+    - No ungrounded scale claims (company-to-individual attribution)
+    - Keyword coverage >= 30% of job posting key terms (job relevance)
+    - Reverse chronological order (newest experience first)
+    - Skills section exists
     - Education section exists
     """
     errors = []
@@ -553,9 +972,9 @@ def validate_resume(html_content: str) -> DraftValidationResult:
     if summary_match:
         summary_text = re.sub(r'<[^>]+>', '', summary_match.group(1)).strip()
         word_count = len(summary_text.split())
-        checks["summary_length"] = word_count <= 100
-        if word_count > 100:
-            errors.append(f"Summary is {word_count} words, should be <= 100")
+        checks["summary_length"] = word_count <= 50
+        if word_count > 50:
+            errors.append(f"Summary is {word_count} words, should be <= 50")
     else:
         errors.append("Professional summary is missing")
         checks["summary_length"] = False
@@ -570,14 +989,35 @@ def validate_resume(html_content: str) -> DraftValidationResult:
     if len(experience_matches) < 1:
         errors.append("At least 1 experience entry is required")
 
-    # Check bullets start with action verbs
+    # Check bullets
     bullet_matches = re.findall(r'<li[^>]*>(.*?)</li>', html_content, re.DOTALL)
     action_verb_bullets = 0
+    quantified_bullets = 0
+    long_bullets = []
+    compound_bullets = []
+    bullet_word_counts = []
+
     for bullet in bullet_matches:
-        clean_bullet = re.sub(r'<[^>]+>', '', bullet).strip().lower()
-        first_word = clean_bullet.split()[0] if clean_bullet.split() else ""
+        clean_bullet = re.sub(r'<[^>]+>', '', bullet).strip()
+        words = clean_bullet.split()
+        bullet_word_counts.append(len(words))
+
+        # Action verb check
+        first_word = words[0].lower() if words else ""
         if first_word in ACTION_VERBS:
             action_verb_bullets += 1
+
+        # Quantification check (XYZ formula compliance)
+        if _has_quantified_metric(clean_bullet):
+            quantified_bullets += 1
+
+        # Bullet word count check (skip certification-style bullets)
+        if len(words) > 15:
+            long_bullets.append(clean_bullet)
+
+        # Compound bullet check
+        if _is_compound_bullet(clean_bullet):
+            compound_bullets.append(clean_bullet)
 
     total_bullets = len(bullet_matches)
     if total_bullets > 0:
@@ -588,6 +1028,96 @@ def validate_resume(html_content: str) -> DraftValidationResult:
     else:
         checks["action_verbs"] = False
         warnings.append("No bullet points found in resume")
+
+    # Bullet word count validation
+    checks["bullet_word_count"] = len(long_bullets) == 0
+    if long_bullets:
+        errors.append(f"{len(long_bullets)} bullet(s) exceed 15 words")
+        for b in long_bullets[:3]:
+            warnings.append(f"Long bullet ({len(b.split())}w): {b[:80]}...")
+
+    # Compound bullet validation
+    checks["no_compound_bullets"] = len(compound_bullets) == 0
+    if compound_bullets:
+        warnings.append(f"{len(compound_bullets)} bullet(s) contain compound achievements — split into separate bullets")
+
+    # Quantification rate — research says 80%+ bullets should have metrics
+    if total_bullets > 0:
+        quant_rate = quantified_bullets / total_bullets
+        checks["quantification_rate"] = quant_rate >= 0.5
+        if quant_rate < 0.5:
+            warnings.append(f"Only {quantified_bullets}/{total_bullets} bullets ({quant_rate:.0%}) have quantified metrics — target 80%+")
+    else:
+        checks["quantification_rate"] = False
+
+    # AI-tell detection — flag AI-sounding words/phrases
+    full_text = re.sub(r'<[^>]+>', '', html_content)
+    ai_tells_found = detect_ai_tells(full_text)
+    checks["ai_tells_clean"] = len(ai_tells_found) == 0
+    if ai_tells_found:
+        warnings.append(f"AI-tell words/phrases detected ({len(ai_tells_found)}): {', '.join(ai_tells_found[:5])}")
+
+    # Rhythm variation — uniform bullet lengths signal AI generation
+    checks["rhythm_variation"] = _has_rhythm_variation(bullet_word_counts)
+    if not checks["rhythm_variation"]:
+        warnings.append("3+ consecutive bullets have nearly identical word counts — vary rhythm to sound more human")
+
+    # Source-aware checks (only run when source_text is provided)
+    if source_text and summary_match:
+        summary_text = re.sub(r'<[^>]+>', '', summary_match.group(1)).strip()
+
+        # Scope conflation detection — "8+ years AI" when source shows 8yr SWE + 1yr AI
+        years_claims = _detect_summary_years_claim(summary_text)
+        all_grounded = True
+        for years, domain in years_claims:
+            if not _check_years_domain_grounded(years, domain, source_text):
+                all_grounded = False
+                warnings.append(
+                    f"Summary claims '{years}+ years {domain}' — verify this matches your actual years in that specific domain"
+                )
+        checks["summary_years_grounded"] = all_grounded
+
+        # Scale attribution detection — employer scale attributed to individual
+        scale_claims = _detect_ungrounded_scale(full_text, source_text)
+        checks["no_ungrounded_scale"] = len(scale_claims) == 0
+        if scale_claims:
+            warnings.append(
+                f"Scale claims not found in your profile ({', '.join(scale_claims)}) — verify these describe YOUR work, not your employer's scale"
+            )
+    else:
+        # Can't check without source — mark as passing
+        checks["summary_years_grounded"] = True
+        checks["no_ungrounded_scale"] = True
+
+    # Keyword coverage — check if resume addresses key job requirements
+    if job_text:
+        job_keywords = _extract_job_keywords(job_text)
+        if job_keywords:
+            resume_text_lower = full_text.lower()
+            matched = [kw for kw in job_keywords if kw in resume_text_lower]
+            coverage = len(matched) / len(job_keywords)
+            checks["keyword_coverage"] = coverage >= 0.3
+            if coverage < 0.3:
+                missing = [kw for kw in job_keywords if kw not in resume_text_lower]
+                warnings.append(
+                    f"Low keyword coverage ({coverage:.0%}) — missing job terms: {', '.join(missing[:5])}"
+                )
+        else:
+            checks["keyword_coverage"] = True
+    else:
+        checks["keyword_coverage"] = True
+
+    # Reverse chronological order — ATS parsers and recruiters expect newest-first
+    exp_entries = _extract_experience_years(html_content)
+    dated_entries = [(role, yr) for role, yr in exp_entries if yr is not None]
+    if len(dated_entries) >= 2:
+        years = [yr for _, yr in dated_entries]
+        is_reverse_chrono = all(years[i] >= years[i + 1] for i in range(len(years) - 1))
+        checks["reverse_chronological"] = is_reverse_chrono
+        if not is_reverse_chrono:
+            warnings.append("Experience section is not in reverse chronological order — most recent role should come first")
+    else:
+        checks["reverse_chronological"] = True  # Can't verify with <2 dated entries
 
     # Check skills section
     skills_match = re.search(
@@ -608,6 +1138,33 @@ def validate_resume(html_content: str) -> DraftValidationResult:
     checks["education_section"] = bool(education_match)
     if not education_match:
         errors.append("Education section is missing")
+
+    # Em dash detection — excessive em/en dashes are a top AI-generation signal
+    em_dash_count = _count_em_dashes(full_text)
+    checks["no_excessive_em_dashes"] = em_dash_count < 3
+    if em_dash_count >= 3:
+        warnings.append(f"{em_dash_count} em/en dashes found — excessive dash usage is a top AI-generation signal")
+
+    # Repetitive bullet openings — 3+ bullets starting with same verb signals AI
+    repeated_verbs = _detect_repetitive_bullet_openings(bullet_matches)
+    checks["varied_bullet_openings"] = len(repeated_verbs) == 0
+    if repeated_verbs:
+        warnings.append(f"Bullets repeatedly start with: {', '.join(repeated_verbs)} — vary opening verbs to sound human")
+
+    # Bullets per role — research says 3-5 bullets per role is optimal
+    role_bullet_counts = _count_bullets_per_role(html_content)
+    all_roles_ok = True
+    for role_title, count in role_bullet_counts:
+        if count < 3 or count > 5:
+            all_roles_ok = False
+            break
+    checks["bullets_per_role"] = all_roles_ok
+    if not all_roles_ok:
+        for role_title, count in role_bullet_counts:
+            if count < 3:
+                warnings.append(f"'{role_title}' has only {count} bullet(s) — aim for 3-5 per role")
+            elif count > 5:
+                warnings.append(f"'{role_title}' has {count} bullets — consolidate to 3-5 per role")
 
     valid = len(errors) == 0
 
@@ -645,22 +1202,35 @@ Technologies Used: {', '.join(exp.get('technologies', []))}
     return "\n---\n".join(formatted)
 
 
-def _format_education_for_draft(education: list[dict]) -> str:
-    """Format education for drafting."""
-    if not education:
-        return "No education provided"
+def _format_top_requirements(job_posting: dict, gap_analysis: dict) -> str:
+    """Extract and format the top job requirements for prominent display.
 
-    formatted = []
-    for edu in education:
-        entry = f"{edu.get('degree', 'Degree')} in {edu.get('field_of_study', 'Unknown')}"
-        entry += f" from {edu.get('institution', 'Unknown')}"
-        if edu.get("end_date"):
-            entry += f" ({edu.get('end_date')})"
-        if edu.get("gpa"):
-            entry += f", GPA: {edu.get('gpa')}"
-        formatted.append(entry)
+    Combines structured job requirements, tech stack, and gap analysis
+    keywords into a prioritized list so the LLM focuses on specific evidence.
+    """
+    items = []
 
-    return "\n".join(formatted)
+    # From structured requirements
+    for req in job_posting.get("requirements", [])[:5]:
+        items.append(req)
+
+    # From tech stack (deduplicated)
+    tech = job_posting.get("tech_stack", [])
+    if tech:
+        items.append(f"Tech stack: {', '.join(tech[:8])}")
+
+    # From gap analysis keywords (if not already covered)
+    keywords = gap_analysis.get("keywords_to_include", [])
+    if keywords and not tech:
+        items.append(f"Key technologies: {', '.join(keywords[:8])}")
+
+    if not items:
+        return "See job posting above for requirements."
+
+    numbered = []
+    for i, item in enumerate(items, 1):
+        numbered.append(f"{i}. {item} — include a bullet with SPECIFIC evidence from the candidate's profile")
+    return "\n".join(numbered)
 
 
 def _format_qa_for_draft(qa_history: list[dict]) -> str:

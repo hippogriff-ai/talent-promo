@@ -3,7 +3,6 @@
 import { useState, useCallback } from "react";
 import type { DraftingSuggestion, SuggestionStatus } from "./useDraftingStorage";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface UseSuggestionsProps {
   threadId: string;
@@ -37,7 +36,7 @@ export function useSuggestions({
 
       try {
         const response = await fetch(
-          `${API_URL}/api/optimize/${threadId}/drafting/suggestion`,
+          `/api/optimize/${threadId}/drafting/suggestion`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -74,7 +73,7 @@ export function useSuggestions({
 
       try {
         const response = await fetch(
-          `${API_URL}/api/optimize/${threadId}/drafting/suggestion`,
+          `/api/optimize/${threadId}/drafting/suggestion`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -125,7 +124,7 @@ export function useDraftingState(threadId: string) {
 
     try {
       const response = await fetch(
-        `${API_URL}/api/optimize/${threadId}/drafting/state`
+        `/api/optimize/${threadId}/drafting/state`
       );
 
       if (!response.ok) {
@@ -150,7 +149,7 @@ export function useDraftingState(threadId: string) {
 
       try {
         const response = await fetch(
-          `${API_URL}/api/optimize/${threadId}/drafting/save`,
+          `/api/optimize/${threadId}/drafting/save`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -182,7 +181,7 @@ export function useDraftingState(threadId: string) {
 
       try {
         const response = await fetch(
-          `${API_URL}/api/optimize/${threadId}/drafting/restore`,
+          `/api/optimize/${threadId}/drafting/restore`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -213,7 +212,7 @@ export function useDraftingState(threadId: string) {
 
     try {
       const response = await fetch(
-        `${API_URL}/api/optimize/${threadId}/drafting/approve`,
+        `/api/optimize/${threadId}/drafting/approve`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -1196,7 +1196,7 @@ async def get_drafting_state(thread_id: str):
     # Validate current draft
     validation = None
     if state.get("resume_html"):
-        validation = validate_resume(state.get("resume_html"))
+        validation = validate_resume(state.get("resume_html"), source_text=state.get("profile_text", ""), job_text=state.get("job_text", ""))
 
     return {
         "thread_id": thread_id,
@@ -1392,6 +1392,8 @@ async def handle_direct_edit(thread_id: str, request: DirectEditRequest):
 @router.post("/{thread_id}/drafting/save")
 async def handle_manual_save(thread_id: str, request: ManualSaveRequest):
     """Handle manual save (creates a new version)."""
+    validate_input(request.html_content, thread_id=thread_id)
+
     workflow_data = _get_workflow_data(thread_id)
     state = workflow_data.get("state", {})
 
@@ -1463,6 +1465,59 @@ async def get_versions(thread_id: str):
     }
 
 
+@router.post("/{thread_id}/discovery/revert")
+async def revert_to_discovery(thread_id: str):
+    """Revert from drafting back to discovery for more conversation.
+
+    This allows users to go back and provide more information before
+    the resume is regenerated.
+    """
+    workflow_data = _get_workflow_data(thread_id)
+    state = workflow_data.get("state", {})
+
+    # Revert discovery confirmation - keep discovered experiences
+    state["discovery_confirmed"] = False
+    state["discovery_skipped"] = False
+    state["current_step"] = "discovery"
+    state["sub_step"] = None
+    state["updated_at"] = datetime.now().isoformat()
+
+    # Clear draft data since it will be regenerated
+    state.pop("resume_html", None)
+    state.pop("resume_draft", None)
+    state.pop("draft_suggestions", None)
+    state.pop("draft_versions", None)
+    state.pop("draft_approved", None)
+    state.pop("draft_validation", None)
+    state.pop("user_done_signal", None)
+    state.pop("qa_complete", None)
+
+    # Re-enable interrupt so discovery node can ask questions again
+    workflow_data["state"] = state
+    workflow_data["interrupted"] = True
+    # Restore the last discovery interrupt if available
+    if state.get("discovery_prompts"):
+        # Find first unasked prompt to resume from
+        for prompt in state["discovery_prompts"]:
+            if not prompt.get("asked"):
+                workflow_data["interrupt_value"] = {
+                    "question": prompt["question"],
+                    "context": {
+                        "current_topic": prompt.get("topic_id"),
+                    },
+                }
+                break
+
+    _save_workflow_data(thread_id, workflow_data)
+
+    return {
+        "success": True,
+        "message": "Reverted to discovery. You can continue the conversation.",
+        "discovery_confirmed": False,
+        "current_step": "discovery",
+    }
+
+
 @router.post("/{thread_id}/drafting/revert")
 async def revert_to_drafting(thread_id: str):
     """Revert from export back to drafting for edits.
@@ -1516,7 +1571,7 @@ async def approve_draft(thread_id: str, request: ApproveDraftRequest):
 
     # Validate resume
     resume_html = state.get("resume_html", "")
-    validation = validate_resume(resume_html)
+    validation = validate_resume(resume_html, source_text=state.get("profile_text", ""), job_text=state.get("job_text", ""))
 
     if not validation.valid:
         raise HTTPException(

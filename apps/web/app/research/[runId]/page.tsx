@@ -22,8 +22,6 @@ interface ResearchReport {
   status: string;
 }
 
-// Get API URL from environment variable with fallback
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface ReportState {
   report: ResearchReport | null;
@@ -44,7 +42,7 @@ export default function ResearchReportPage() {
     const fetchReport = async () => {
       try {
         const response = await fetch(
-          `${API_URL}/api/research/status/${runId}`
+          `/api/research/status/${runId}`
         );
         if (!response.ok) {
           throw new Error("Research run not found");

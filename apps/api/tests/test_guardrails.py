@@ -36,10 +36,8 @@ from guardrails.output_validators import (
 from guardrails.bias_detector import (
     BiasCategory,
     BiasFlag,
-    count_by_category,
     detect_bias,
     format_bias_warnings,
-    get_bias_categories,
     has_blocking_bias,
 )
 from guardrails import (
@@ -51,7 +49,6 @@ from guardrails.pii_detector import (
     PIIType,
     detect_pii,
     format_pii_warnings,
-    get_pii_summary,
     has_sensitive_pii,
     redact_sensitive_pii,
 )
@@ -74,6 +71,10 @@ from guardrails.claim_validator import (
     validate_claims_grounded,
     format_ungrounded_claims,
     has_high_risk_claims,
+)
+from guardrails.content_moderator import (
+    check_content_safety,
+    validate_content_safety,
 )
 
 
@@ -675,22 +676,6 @@ class TestBiasDetector:
         """has_blocking_bias returns False for empty list."""
         assert has_blocking_bias([]) is False
 
-    def test_get_bias_categories(self):
-        """get_bias_categories returns unique category list."""
-        flags = detect_bias("digital native salesman must be physically fit")
-        categories = get_bias_categories(flags)
-        # Should have age, gender, disability
-        assert len(categories) >= 3
-        assert "age" in categories
-        assert "gender" in categories
-        assert "disability" in categories
-
-    def test_count_by_category(self):
-        """count_by_category returns proper counts."""
-        flags = detect_bias("chairman and salesman")
-        counts = count_by_category(flags)
-        assert counts.get("gender", 0) == 2  # Two gender terms
-
     # --- Case sensitivity tests ---
 
     def test_case_insensitive_detection(self):
@@ -999,13 +984,6 @@ class TestPIIDetector:
     def test_has_sensitive_pii_email_only(self):
         """has_sensitive_pii returns False for email-only text."""
         assert has_sensitive_pii("Contact: john@example.com") is False
-
-    def test_get_pii_summary(self):
-        """get_pii_summary returns correct counts."""
-        text = "SSN: 123-45-6789, another SSN: 987-65-4321"
-        pii = detect_pii(text)
-        summary = get_pii_summary(pii)
-        assert summary.get("ssn", 0) == 2
 
     def test_format_pii_warnings(self):
         """format_pii_warnings creates proper warning dicts."""
@@ -1404,3 +1382,281 @@ class TestClaimValidator:
 
         # Without source, no claims validation
         assert len(results.get("ungrounded_claims", [])) == 0
+
+
+class TestContentModerator:
+    """Tests for content safety moderation.
+
+    These tests verify that violent, hateful, illegal, and otherwise
+    inappropriate content is correctly flagged while professional/technical
+    language passes without false positives.
+    """
+
+    # --- Safe professional content tests ---
+
+    def test_normal_resume_text_safe(self):
+        """Standard resume text should pass content safety check."""
+        is_safe, reason = check_content_safety(
+            "Software Engineer with 5 years experience in Python and JavaScript"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_empty_text_safe(self):
+        """Empty text should be treated as safe."""
+        is_safe, reason = check_content_safety("")
+        assert is_safe is True
+        assert reason is None
+
+    def test_none_like_empty_safe(self):
+        """None-ish empty string should be safe."""
+        is_safe, reason = check_content_safety("   ")
+        assert is_safe is True
+
+    def test_technical_kill_process_safe(self):
+        """'kill process' is legitimate technical language."""
+        is_safe, reason = check_content_safety(
+            "Managed Linux servers, used kill command to terminate processes"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_technical_attack_surface_safe(self):
+        """'attack surface' is legitimate security terminology."""
+        is_safe, reason = check_content_safety(
+            "Reduced attack surface by implementing network segmentation"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_threat_model_safe(self):
+        """'threat model' is legitimate security terminology."""
+        is_safe, reason = check_content_safety(
+            "Created comprehensive threat model for cloud infrastructure"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_penetration_testing_safe(self):
+        """'penetration testing' is legitimate security work."""
+        is_safe, reason = check_content_safety(
+            "Led penetration testing engagements for Fortune 500 clients"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_drug_testing_safe(self):
+        """'drug testing' is a legitimate job requirement."""
+        is_safe, reason = check_content_safety(
+            "Managed drug testing compliance program for 500 employees"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_terminate_employment_safe(self):
+        """'terminate employment' is legitimate HR language."""
+        is_safe, reason = check_content_safety(
+            "Handled decisions to terminate employment contracts"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_execute_strategy_safe(self):
+        """'execute strategy' is legitimate business language."""
+        is_safe, reason = check_content_safety(
+            "Responsible for executing go-to-market strategy"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_target_audience_safe(self):
+        """'target audience' is legitimate marketing language."""
+        is_safe, reason = check_content_safety(
+            "Defined target audience segments for product launch"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_offensive_security_safe(self):
+        """'offensive security' is a legitimate security specialization."""
+        is_safe, reason = check_content_safety(
+            "Certified in offensive security and red team operations"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_fire_department_safe(self):
+        """'fire department' is a legitimate employer."""
+        is_safe, reason = check_content_safety(
+            "Served as Battalion Chief for the city fire department"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_hit_target_safe(self):
+        """'hit target' is legitimate business language."""
+        is_safe, reason = check_content_safety(
+            "Consistently hit sales targets exceeding $1M quarterly"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_deadline_safe(self):
+        """'deadline' is legitimate business language."""
+        is_safe, reason = check_content_safety(
+            "Met tight deadlines across 15 product launches"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_suicide_prevention_safe(self):
+        """'suicide prevention' is legitimate social work."""
+        is_safe, reason = check_content_safety(
+            "Trained in suicide prevention and crisis intervention"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_abuse_detection_safe(self):
+        """'abuse detection' is legitimate trust & safety work."""
+        is_safe, reason = check_content_safety(
+            "Built abuse detection pipeline handling 1M reports per day"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_race_condition_safe(self):
+        """'race condition' is legitimate software terminology."""
+        is_safe, reason = check_content_safety(
+            "Fixed critical race condition in distributed cache system"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    def test_hostile_takeover_safe(self):
+        """'hostile takeover' is legitimate finance terminology."""
+        is_safe, reason = check_content_safety(
+            "Advised on hostile takeover defense strategies"
+        )
+        assert is_safe is True
+        assert reason is None
+
+    # --- Blocked content tests ---
+
+    def test_violence_threat_blocked(self):
+        """Direct violence threats should be blocked."""
+        is_safe, reason = check_content_safety("I will kill you")
+        assert is_safe is False
+        assert reason is not None
+        assert "violence" in reason.lower() or "Threats" in reason
+
+    def test_murder_threat_blocked(self):
+        """Murder threats should be blocked."""
+        is_safe, reason = check_content_safety("I want to murder someone")
+        assert is_safe is False
+
+    def test_bomb_making_blocked(self):
+        """Bomb-making instructions should be blocked."""
+        is_safe, reason = check_content_safety("How to make a bomb at home")
+        assert is_safe is False
+
+    def test_hate_speech_blocked(self):
+        """Hate speech should be blocked."""
+        is_safe, reason = check_content_safety(
+            "white supremacy is the answer"
+        )
+        assert is_safe is False
+
+    def test_ethnic_cleansing_blocked(self):
+        """Ethnic cleansing references should be blocked."""
+        is_safe, reason = check_content_safety("support ethnic cleansing")
+        assert is_safe is False
+
+    def test_drug_manufacturing_blocked(self):
+        """Drug manufacturing instructions should be blocked."""
+        is_safe, reason = check_content_safety("how to cook meth")
+        assert is_safe is False
+
+    def test_drug_trafficking_blocked(self):
+        """Drug trafficking should be blocked."""
+        is_safe, reason = check_content_safety("I sell illegal drugs")
+        assert is_safe is False
+
+    def test_money_laundering_blocked(self):
+        """Money laundering instructions should be blocked."""
+        is_safe, reason = check_content_safety("how to launder money")
+        assert is_safe is False
+
+    def test_hacking_instructions_blocked(self):
+        """Unauthorized access instructions should be blocked."""
+        is_safe, reason = check_content_safety(
+            "how to hack a bank account"
+        )
+        assert is_safe is False
+
+    def test_identity_theft_blocked(self):
+        """Identity theft instructions should be blocked."""
+        is_safe, reason = check_content_safety(
+            "steal identity documents from clients"
+        )
+        assert is_safe is False
+
+    def test_self_harm_instructions_blocked(self):
+        """Self-harm instructions should be blocked."""
+        is_safe, reason = check_content_safety("how to commit suicide")
+        assert is_safe is False
+
+    def test_self_harm_encouragement_blocked(self):
+        """Self-harm encouragement should be blocked."""
+        is_safe, reason = check_content_safety("you should kill yourself")
+        assert is_safe is False
+
+    # --- validate_content_safety tests ---
+
+    def test_validate_content_safety_passes_safe_text(self):
+        """validate_content_safety should not raise for safe text."""
+        # Should not raise
+        validate_content_safety("Professional software engineer")
+
+    def test_validate_content_safety_raises_for_unsafe(self):
+        """validate_content_safety should raise HTTPException for unsafe text."""
+        with pytest.raises(HTTPException) as exc:
+            validate_content_safety("I will kill you")
+        assert exc.value.status_code == 400
+        assert "professional" in exc.value.detail.lower()
+
+    # --- Integration with validate_input tests ---
+
+    def test_validate_input_blocks_unsafe_content(self):
+        """validate_input should block unsafe content when configured."""
+        config = GuardrailsConfig(block_toxic_content=True)
+        with pytest.raises(HTTPException):
+            validate_input("I will kill you", config=config)
+
+    def test_validate_input_skips_content_check_when_disabled(self):
+        """validate_input should skip content check when disabled."""
+        config = GuardrailsConfig(block_toxic_content=False)
+        passed, warnings = validate_input(
+            "how to make a bomb at home",
+            config=config,
+        )
+        # Should pass since content moderation is disabled
+        assert passed is True
+
+    # --- Case sensitivity tests ---
+
+    def test_case_insensitive_blocking(self):
+        """Content moderation should be case-insensitive."""
+        is_safe1, _ = check_content_safety("I WILL KILL YOU")
+        is_safe2, _ = check_content_safety("i will kill you")
+        is_safe3, _ = check_content_safety("I Will Kill You")
+        assert is_safe1 is False
+        assert is_safe2 is False
+        assert is_safe3 is False
+
+    def test_case_insensitive_safe_contexts(self):
+        """Safe professional contexts should work case-insensitively."""
+        is_safe1, _ = check_content_safety("KILL PROCESS immediately")
+        is_safe2, _ = check_content_safety("Kill Process immediately")
+        assert is_safe1 is True
+        assert is_safe2 is True

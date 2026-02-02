@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export interface StreamEvent {
   type: "step_update" | "complete" | "error";
@@ -40,7 +39,7 @@ export function useSSEStream(threadId: string | null): UseSSEStreamReturn {
   const connect = useCallback(() => {
     if (!threadId || eventSourceRef.current) return;
 
-    const url = `${API_URL}/api/optimize/${threadId}/stream`;
+    const url = `/api/optimize/${threadId}/stream`;
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
 

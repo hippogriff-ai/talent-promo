@@ -8,7 +8,6 @@ import {
 import ATSReportDisplay from "./ATSReportDisplay";
 import LinkedInSuggestionsDisplay from "./LinkedInSuggestionsDisplay";
 
-const API_URL = "";
 
 interface ExportStepProps {
   threadId: string;
@@ -77,7 +76,7 @@ export default function ExportStep({
       storage.updateStep("optimizing");
 
       const response = await fetch(
-        `${API_URL}/api/optimize/${threadId}/export/start`,
+        `/api/optimize/${threadId}/export/start`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -113,7 +112,7 @@ export default function ExportStep({
     async (format: "pdf" | "txt" | "json" | "docx") => {
       try {
         const response = await fetch(
-          `${API_URL}/api/optimize/${threadId}/export/download/${format}`
+          `/api/optimize/${threadId}/export/download/${format}`
         );
 
         if (!response.ok) {
@@ -146,7 +145,7 @@ export default function ExportStep({
   const copyToClipboard = useCallback(async () => {
     try {
       const response = await fetch(
-        `${API_URL}/api/optimize/${threadId}/export/copy-text`,
+        `/api/optimize/${threadId}/export/copy-text`,
         {
           method: "POST",
         }

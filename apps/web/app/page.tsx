@@ -91,10 +91,15 @@ export default function Home() {
   const [showGuide, setShowGuide] = useState(false);
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [jobUrl, setJobUrl] = useState("");
-  const [inputMode, setInputMode] = useState<"linkedin" | "paste">("paste");
+  const [inputMode, setInputMode] = useState<"linkedin" | "paste" | "upload">("paste");
   const [jobInputMode, setJobInputMode] = useState<"url" | "paste">("url");
   const [resumeText, setResumeText] = useState("");
   const [jobText, setJobText] = useState("");
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [honeypot, setHoneypot] = useState("");  // Bot trap - should remain empty
@@ -176,10 +181,89 @@ export default function Home() {
     return isCorrect;
   };
 
+  const handleFileUpload = async (file: File) => {
+    setUploadError("");
+    setUploadedFile(file);
+
+    // Validate file type
+    const name = file.name.toLowerCase();
+    if (!name.endsWith(".pdf") && !name.endsWith(".docx")) {
+      setUploadError("Only PDF and DOCX files are supported.");
+      setUploadedFile(null);
+      return;
+    }
+
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError("File size exceeds 5MB limit.");
+      setUploadedFile(null);
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/documents/parse", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (!data.success) {
+        setUploadError(data.error || "Failed to parse document.");
+        setUploadedFile(null);
+        return;
+      }
+
+      if (!data.text || data.text.trim().length < 20) {
+        setUploadError("Could not extract meaningful text from the file. Try pasting your resume instead.");
+        setUploadedFile(null);
+        return;
+      }
+
+      // Success - populate resume text and switch to paste mode to show it
+      setResumeText(data.text);
+      setInputMode("paste");
+      setUploadedFile(null);
+    } catch (err) {
+      setUploadError(
+        err instanceof Error ? err.message : "Failed to upload file. Please try again."
+      );
+      setUploadedFile(null);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileUpload(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
   const canSubmit = () => {
     const hasProfile = inputMode === "linkedin"
       ? linkedinUrl && isValidUrl(linkedinUrl)
-      : resumeText.trim().length > 50;
+      : inputMode === "upload"
+        ? false  // Upload auto-switches to paste mode on success
+        : resumeText.trim().length > 50;
     const hasJob = jobInputMode === "url"
       ? jobUrl && isValidUrl(jobUrl)
       : jobText.trim().length > 50;
@@ -371,7 +455,22 @@ export default function Home() {
                       <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
-                      Paste Resume
+                      Paste
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setInputMode("upload")}
+                    className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                      inputMode === "upload"
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    <span className="flex items-center justify-center">
+                      <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      Upload
                     </span>
                   </button>
                   <button
@@ -386,7 +485,7 @@ export default function Home() {
                       <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
                       </svg>
-                      LinkedIn URL
+                      LinkedIn
                     </span>
                   </button>
                 </div>
@@ -399,6 +498,61 @@ export default function Home() {
                     rows={4}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none"
                   />
+                ) : inputMode === "upload" ? (
+                  <div>
+                    <div
+                      onDrop={handleDrop}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`relative flex flex-col items-center justify-center px-4 py-8 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+                        isDragOver
+                          ? "border-indigo-500 bg-indigo-50"
+                          : isUploading
+                            ? "border-gray-300 bg-gray-50 cursor-wait"
+                            : "border-gray-300 hover:border-indigo-400 hover:bg-gray-50"
+                      }`}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.docx"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleFileUpload(file);
+                          e.target.value = "";  // Reset so same file can be re-selected
+                        }}
+                      />
+                      {isUploading ? (
+                        <>
+                          <svg className="animate-spin w-8 h-8 text-indigo-500 mb-2" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          <p className="text-sm text-gray-600">Extracting text from {uploadedFile?.name}...</p>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-8 h-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                          </svg>
+                          <p className="text-sm font-medium text-gray-700">
+                            Drop your resume here or click to browse
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">PDF or DOCX, max 5MB</p>
+                        </>
+                      )}
+                    </div>
+                    {uploadError && (
+                      <p className="mt-2 text-xs text-red-600 flex items-center">
+                        <svg className="w-3.5 h-3.5 mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        {uploadError}
+                      </p>
+                    )}
+                  </div>
                 ) : (
                   <div>
                     <div className="relative">

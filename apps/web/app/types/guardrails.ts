@@ -69,6 +69,8 @@ export interface ValidationResults {
   ungrounded_claims: UngroundedClaim[];
   /** Whether the content was sanitized (problematic patterns removed) */
   sanitized: boolean;
+  /** Programmatic quality checks from validate_resume() */
+  quality_checks?: Record<string, boolean>;
 }
 
 /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   UserProfile,
   JobPosting,
@@ -70,7 +70,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
     <div className="space-y-6">
       {/* Company Overview */}
       {research.company_overview && (
-        <div>
+        <div id="section-company-overview">
           <h5 className="font-semibold text-gray-800 mb-2">Company Overview</h5>
           <p className="text-gray-600 text-sm whitespace-pre-wrap">{research.company_overview}</p>
         </div>
@@ -78,7 +78,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
 
       {/* Company Culture */}
       {research.company_culture && (
-        <div>
+        <div id="section-company-culture">
           <h5 className="font-semibold text-gray-800 mb-2">Company Culture</h5>
           <p className="text-gray-600 text-sm whitespace-pre-wrap">{research.company_culture}</p>
         </div>
@@ -86,7 +86,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
 
       {/* Company Values */}
       {research.company_values && research.company_values.length > 0 && (
-        <div>
+        <div id="section-company-values">
           <h5 className="font-semibold text-gray-800 mb-2">Company Values</h5>
           <div className="flex flex-wrap gap-2">
             {research.company_values.map((value, idx) => (
@@ -103,7 +103,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
 
       {/* Tech Stack Details */}
       {research.tech_stack_details && research.tech_stack_details.length > 0 && (
-        <div>
+        <div id="section-tech-stack">
           <h5 className="font-semibold text-gray-800 mb-2">Tech Stack Details</h5>
           <div className="space-y-2">
             {research.tech_stack_details.map((tech, idx) => (
@@ -127,7 +127,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
 
       {/* Similar Profiles */}
       {research.similar_profiles && research.similar_profiles.length > 0 && (
-        <div>
+        <div id="section-similar-profiles">
           <h5 className="font-semibold text-gray-800 mb-2">Similar Successful Profiles</h5>
           <div className="space-y-4">
             {research.similar_profiles.map((profile, idx) => (
@@ -184,7 +184,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
 
       {/* Hiring Patterns */}
       {research.hiring_patterns && (
-        <div>
+        <div id="section-hiring-patterns">
           <h5 className="font-semibold text-gray-800 mb-2">Hiring Patterns</h5>
           <p className="text-gray-600 text-sm whitespace-pre-wrap">{research.hiring_patterns}</p>
         </div>
@@ -192,7 +192,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
 
       {/* Industry Trends */}
       {research.industry_trends && research.industry_trends.length > 0 && (
-        <div>
+        <div id="section-industry-trends">
           <h5 className="font-semibold text-gray-800 mb-2">Industry Trends</h5>
           <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
             {research.industry_trends.map((trend, idx) => (
@@ -204,7 +204,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
 
       {/* Company News */}
       {research.company_news && research.company_news.length > 0 && (
-        <div>
+        <div id="section-company-news">
           <h5 className="font-semibold text-gray-800 mb-2">Recent Company News</h5>
           <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
             {research.company_news.map((news, idx) => (
@@ -216,7 +216,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
 
       {/* Hiring Criteria */}
       {research.hiring_criteria && (
-        <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+        <div id="section-hiring-criteria" className="bg-amber-50 rounded-lg p-4 border border-amber-200">
           <h5 className="font-semibold text-amber-800 mb-3 flex items-center">
             <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -269,7 +269,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
 
       {/* Ideal Profile */}
       {research.ideal_profile && (
-        <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+        <div id="section-ideal-profile" className="bg-green-50 rounded-lg p-4 border border-green-200">
           <h5 className="font-semibold text-green-800 mb-3 flex items-center">
             <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -348,7 +348,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
       {gapAnalysis && (
         <>
           <hr className="border-gray-200" />
-          <h4 className="text-base font-semibold text-gray-900 flex items-center">
+          <h4 id="section-gap-analysis" className="text-base font-semibold text-gray-900 flex items-center">
             <svg className="w-5 h-5 mr-2 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
@@ -454,12 +454,29 @@ export function ResearchModal({
   onClose,
   research,
   gapAnalysis,
+  scrollToSection,
 }: {
   isOpen: boolean;
   onClose: () => void;
   research: ResearchFindings | null;
   gapAnalysis?: GapAnalysis | null;
+  scrollToSection?: string | null;
 }) {
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen && scrollToSection && contentRef.current) {
+      // Wait for render, then scroll to section
+      const timer = setTimeout(() => {
+        const el = contentRef.current?.querySelector(`#${scrollToSection}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, scrollToSection]);
+
   if (!isOpen || !research) return null;
 
   return (
@@ -492,7 +509,7 @@ export function ResearchModal({
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div ref={contentRef} className="flex-1 overflow-y-auto px-6 py-4">
             <ResearchFullView research={research} gapAnalysis={gapAnalysis} />
           </div>
 
@@ -557,9 +574,15 @@ export default function ResearchStep({
 }: ResearchStepProps) {
   // Modal state
   const [researchModalOpen, setResearchModalOpen] = useState(false);
+  const [researchModalSection, setResearchModalSection] = useState<string | null>(null);
   // New markdown editor modal state
   const [profileMarkdownModalOpen, setProfileMarkdownModalOpen] = useState(false);
   const [jobMarkdownModalOpen, setJobMarkdownModalOpen] = useState(false);
+
+  const openResearchModal = (section?: string) => {
+    setResearchModalSection(section || null);
+    setResearchModalOpen(true);
+  };
 
   // Determine step statuses based on what data is available
   // Check for actual content, not just truthy objects (empty {} is truthy but useless)
@@ -923,7 +946,7 @@ export default function ResearchStep({
               Research Insights
             </h3>
             <button
-              onClick={() => setResearchModalOpen(true)}
+              onClick={() => openResearchModal()}
               className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
             >
               Show More
@@ -997,7 +1020,7 @@ export default function ResearchStep({
                 </div>
                 {research.tech_stack_details.length > 8 && (
                   <button
-                    onClick={() => setResearchModalOpen(true)}
+                    onClick={() => openResearchModal("section-tech-stack")}
                     className="mt-2 text-xs text-blue-600 hover:text-blue-800"
                   >
                     +{research.tech_stack_details.length - 8} more technologies
@@ -1052,7 +1075,7 @@ export default function ResearchStep({
                 </div>
                 {research.similar_profiles.length > 4 && (
                   <button
-                    onClick={() => setResearchModalOpen(true)}
+                    onClick={() => openResearchModal("section-similar-profiles")}
                     className="mt-2 text-xs text-blue-600 hover:text-blue-800"
                   >
                     +{research.similar_profiles.length - 4} more profiles
@@ -1075,7 +1098,7 @@ export default function ResearchStep({
                   {research.industry_trends.length > 5 && (
                     <li>
                       <button
-                        onClick={() => setResearchModalOpen(true)}
+                        onClick={() => openResearchModal("section-industry-trends")}
                         className="text-blue-600 hover:text-blue-800 ml-4"
                       >
                         +{research.industry_trends.length - 5} more trends
@@ -1119,7 +1142,7 @@ export default function ResearchStep({
                     {research.company_news.length > 4 && (
                       <li>
                         <button
-                          onClick={() => setResearchModalOpen(true)}
+                          onClick={() => openResearchModal("section-company-news")}
                           className="text-blue-600 hover:text-blue-800 ml-3"
                         >
                           +{research.company_news.length - 4} more news items
@@ -1166,7 +1189,7 @@ export default function ResearchStep({
                     </div>
                   )}
                   <button
-                    onClick={() => setResearchModalOpen(true)}
+                    onClick={() => openResearchModal("section-hiring-criteria")}
                     className="text-xs text-blue-600 hover:text-blue-800 mt-2"
                   >
                     View full criteria →
@@ -1201,7 +1224,7 @@ export default function ResearchStep({
                     </div>
                   )}
                   <button
-                    onClick={() => setResearchModalOpen(true)}
+                    onClick={() => openResearchModal("section-ideal-profile")}
                     className="text-xs text-blue-600 hover:text-blue-800 mt-2"
                   >
                     View full profile →
@@ -1216,9 +1239,10 @@ export default function ResearchStep({
       {/* Research Modal */}
       <ResearchModal
         isOpen={researchModalOpen}
-        onClose={() => setResearchModalOpen(false)}
+        onClose={() => { setResearchModalOpen(false); setResearchModalSection(null); }}
         research={research}
         gapAnalysis={gapAnalysis}
+        scrollToSection={researchModalSection}
       />
 
       {/* Gap Analysis */}

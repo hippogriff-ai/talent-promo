@@ -76,6 +76,16 @@ export default function OptimizePage() {
   // Stage navigation - for viewing completed stages (read-only review mode)
   const [viewingStage, setViewingStage] = useState<WorkflowStage | null>(null);
   const [researchReviewModalOpen, setResearchReviewModalOpen] = useState(false);
+  const [researchReviewSection, setResearchReviewSection] = useState<string | null>(null);
+
+  const openResearchReviewModal = (section?: string) => {
+    setResearchReviewSection(section || null);
+    openResearchReviewModal();
+  };
+  const closeResearchReviewModal = () => {
+    setResearchReviewModalOpen(false);
+    setResearchReviewSection(null);
+  };
 
   // Modal states for viewing profile and job markdown
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -632,7 +642,7 @@ export default function OptimizePage() {
                     Research Insights
                   </h3>
                   <button
-                    onClick={() => setResearchReviewModalOpen(true)}
+                    onClick={() => openResearchReviewModal()}
                     className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
                   >
                     Show More
@@ -680,7 +690,7 @@ export default function OptimizePage() {
                     </div>
                   )}
                   <p className="text-xs text-center">
-                    <button onClick={() => setResearchReviewModalOpen(true)} className="text-blue-600 hover:text-blue-800 font-medium">
+                    <button onClick={() => openResearchReviewModal()} className="text-blue-600 hover:text-blue-800 font-medium">
                       View full research report →
                     </button>
                   </p>
@@ -1055,7 +1065,7 @@ export default function OptimizePage() {
                   Research Insights
                 </h3>
                 <button
-                  onClick={() => setResearchReviewModalOpen(true)}
+                  onClick={() => openResearchReviewModal()}
                   className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
                 >
                   Show More
@@ -1105,7 +1115,7 @@ export default function OptimizePage() {
                         </span>
                       ))}
                       {workflow.data.research.tech_stack_details.length > 8 && (
-                        <button onClick={() => setResearchReviewModalOpen(true)} className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800">
+                        <button onClick={() => openResearchReviewModal("section-tech-stack")} className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800">
                           +{workflow.data.research.tech_stack_details.length - 8} more
                         </button>
                       )}
@@ -1148,7 +1158,7 @@ export default function OptimizePage() {
                         ))}
                         {workflow.data.research.company_news.length > 3 && (
                           <li>
-                            <button onClick={() => setResearchReviewModalOpen(true)} className="text-blue-600 hover:text-blue-800 ml-3">
+                            <button onClick={() => openResearchReviewModal("section-company-news")} className="text-blue-600 hover:text-blue-800 ml-3">
                               +{workflow.data.research.company_news.length - 3} more
                             </button>
                           </li>
@@ -1173,7 +1183,7 @@ export default function OptimizePage() {
                           ))}
                         </ul>
                       )}
-                      <button onClick={() => setResearchReviewModalOpen(true)} className="text-xs text-blue-600 hover:text-blue-800 mt-1">
+                      <button onClick={() => openResearchReviewModal("section-hiring-criteria")} className="text-xs text-blue-600 hover:text-blue-800 mt-1">
                         View full criteria →
                       </button>
                     </div>
@@ -1186,7 +1196,7 @@ export default function OptimizePage() {
                           {workflow.data.research.ideal_profile.headline}
                         </p>
                       )}
-                      <button onClick={() => setResearchReviewModalOpen(true)} className="text-xs text-blue-600 hover:text-blue-800 mt-1">
+                      <button onClick={() => openResearchReviewModal("section-ideal-profile")} className="text-xs text-blue-600 hover:text-blue-800 mt-1">
                         View full profile →
                       </button>
                     </div>
@@ -1200,9 +1210,10 @@ export default function OptimizePage() {
           {workflow.data.research && (
             <ResearchModal
               isOpen={researchReviewModalOpen}
-              onClose={() => setResearchReviewModalOpen(false)}
+              onClose={closeResearchReviewModal}
               research={workflow.data.research}
               gapAnalysis={workflow.data.gapAnalysis}
+              scrollToSection={researchReviewSection}
             />
           )}
 

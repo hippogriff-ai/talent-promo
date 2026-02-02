@@ -1397,3 +1397,13 @@ Users can now view the complete research report during the discovery phase.
 - "Show More" modal shows EVERYTHING: all research fields + all gap analysis fields (strengths, gaps, recommended_emphasis, transferable_skills, keywords_to_include, potential_concerns)
 - Tech stack items display correct color coding based on importance level
 - Build passes, TypeScript compiles
+
+### Scroll-to-Section Fix (2026-02-02)
+**Problem**: Clicking "+3 more" on news or "View full profile →" opened the full modal at the top, not scrolled to the relevant section.
+
+**Fix**: Added `scrollToSection` prop to `ResearchModal`. Each "+N more" / "View full X →" button now passes a section ID. Modal uses `useEffect` + `scrollIntoView({ behavior: "smooth" })` to auto-scroll to the target section after opening.
+
+- Added `id` attributes to all 12 sections in `ResearchFullView`
+- `ResearchModal` accepts optional `scrollToSection` prop
+- Both `ResearchStep.tsx` and `page.tsx` pass section-specific targets
+- "Show More" (top-level) opens modal at top; section links scroll to their section

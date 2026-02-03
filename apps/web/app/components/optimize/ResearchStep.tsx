@@ -436,7 +436,9 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
               <div className="space-y-2">
                 {gapAnalysis.potential_concerns.map((concern, idx) => (
                   <div key={idx} className="bg-orange-50 rounded-lg p-3 border border-orange-200 text-sm text-gray-700">
-                    {concern}
+                    {typeof concern === 'string'
+                      ? concern
+                      : `${(concern as { concern?: string }).concern || ''}${(concern as { mitigation?: string }).mitigation ? ' — ' + (concern as { mitigation?: string }).mitigation : ''}`}
                   </div>
                 ))}
               </div>

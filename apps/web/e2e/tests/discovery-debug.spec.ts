@@ -260,7 +260,7 @@ test.describe('Discovery Debug Tests', () => {
       // Wait for modal to close and page to reload
       await page.waitForTimeout(2000);
       // The page will reload, wait for it to stabilize
-      await page.waitForLoadState('networkidle').catch(() => {});
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
     }
 
     // Click "Continue to Discovery" if the research review screen is shown

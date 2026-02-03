@@ -93,7 +93,7 @@ export class LandingPage {
   async goto() {
     // Clear localStorage to get consistent first-visit behavior
     await this.page.goto('/');
-    await this.page.waitForLoadState('networkidle');
+    await this.page.waitForLoadState('domcontentloaded');
 
     // Close onboarding guide if it appears
     await this.dismissOnboardingGuide();

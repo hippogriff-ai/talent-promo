@@ -57,6 +57,7 @@ export default function OptimizePage() {
     jobUrl?: string;
     resumeText?: string;
     jobText?: string;
+    turnstileToken?: string;
   }>({});
 
   // Dialog states
@@ -80,7 +81,7 @@ export default function OptimizePage() {
 
   const openResearchReviewModal = (section?: string) => {
     setResearchReviewSection(section || null);
-    openResearchReviewModal();
+    setResearchReviewModalOpen(true);
   };
   const closeResearchReviewModal = () => {
     setResearchReviewModalOpen(false);
@@ -125,7 +126,8 @@ export default function OptimizePage() {
               data.jobUrl,
               data.resumeText,
               data.jobText,
-              preferences
+              preferences,
+              data.turnstileToken
             );
             workflowSession.startSession(
               data.linkedinUrl || "",

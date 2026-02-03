@@ -44,3 +44,6 @@ coverage/
 .temporal/
 .claude/
 **/.claude/
+
+# Worktrees
+.worktrees/

@@ -56,7 +56,7 @@ export default function ErrorRecovery({
     return (
       <div className="bg-white rounded-lg shadow-lg border border-blue-200 overflow-hidden max-w-lg mx-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-6 border-b border-blue-100">
+        <div className="bg-gradient-to-r from-blue-50 to-green-50 px-6 py-6 border-b border-blue-100">
           <div className="text-center">
             <span className="text-5xl mb-3 block">🔒</span>
             <h2 className="text-xl font-semibold text-blue-900">

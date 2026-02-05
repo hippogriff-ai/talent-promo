@@ -168,7 +168,7 @@ export default function VersionHistory({
 function getTriggerStyle(trigger: VersionTrigger): string {
   switch (trigger) {
     case "initial":
-      return "bg-purple-100 text-purple-700";
+      return "bg-green-100 text-green-700";
     case "accept":
       return "bg-green-100 text-green-700";
     case "decline":
@@ -180,7 +180,7 @@ function getTriggerStyle(trigger: VersionTrigger): string {
     case "auto_checkpoint":
       return "bg-cyan-100 text-cyan-700";
     case "restore":
-      return "bg-indigo-100 text-indigo-700";
+      return "bg-green-100 text-green-700";
     default:
       return "bg-gray-100 text-gray-700";
   }

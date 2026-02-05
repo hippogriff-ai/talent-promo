@@ -313,17 +313,17 @@ export default function DraftingChat({
 
       {/* Selected Text Preview */}
       {selectedText && (
-        <div className="px-3 py-2 bg-purple-50 border-b">
+        <div className="px-3 py-2 bg-green-50 border-b">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-purple-700">Selected:</span>
+            <span className="text-xs font-medium text-green-700">Selected:</span>
             <button
               onClick={onClearSelection}
-              className="text-xs text-purple-600 hover:text-purple-800"
+              className="text-xs text-green-600 hover:text-green-800"
             >
               Clear
             </button>
           </div>
-          <p className="text-xs text-purple-900 mt-1 line-clamp-2">
+          <p className="text-xs text-green-900 mt-1 line-clamp-2">
             {selectedText.length > 100 ? `${selectedText.substring(0, 100)}...` : selectedText}
           </p>
         </div>
@@ -380,7 +380,7 @@ export default function DraftingChat({
             <div
               className={`max-w-[85%] rounded-lg px-3 py-2 ${
                 msg.role === "user"
-                  ? "bg-purple-600 text-white"
+                  ? "bg-green-600 text-white"
                   : "bg-gray-100 text-gray-800"
               }`}
             >
@@ -439,12 +439,12 @@ export default function DraftingChat({
             placeholder={selectedText ? "What should I do with this text?" : "Select text first..."}
             disabled={isLoading || !selectedText}
             rows={1}
-            className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none disabled:bg-gray-100"
+            className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none disabled:bg-gray-100"
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading || !selectedText}
-            className="px-3 py-2 bg-purple-600 text-white text-xs rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            className="px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
             Send
           </button>

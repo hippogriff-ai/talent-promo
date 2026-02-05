@@ -198,7 +198,7 @@ export default function DiscoveryChat({
             {/* Progress bar inline */}
             <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
               <div
-                className="h-full bg-purple-600 transition-all duration-300"
+                className="h-full bg-green-600 transition-all duration-300"
                 style={{ width: `${(currentPromptNumber / totalPrompts) * 100}%` }}
               />
             </div>
@@ -206,7 +206,7 @@ export default function DiscoveryChat({
           <div className="flex items-center space-x-3">
             {/* Current topic badge */}
             {currentTopic?.title && (
-              <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded truncate max-w-32" title={currentTopic.goal}>
+              <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded truncate max-w-32" title={currentTopic.goal}>
                 {currentTopic.title}
               </span>
             )}
@@ -234,8 +234,8 @@ export default function DiscoveryChat({
             {msg.role === "agent" ? (
               // Agent message - full width with small avatar
               <div className="flex items-start space-x-2">
-                <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-purple-600 text-xs font-medium">AI</span>
+                <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-green-600 text-xs font-medium">AI</span>
                 </div>
                 <div className="flex-1 bg-gray-50 rounded-lg rounded-tl-none px-3 py-2">
                   <p className="text-gray-800 text-sm">{msg.content}</p>
@@ -244,11 +244,11 @@ export default function DiscoveryChat({
             ) : (
               // User message - full width with small avatar
               <div className="flex items-start space-x-2 justify-end">
-                <div className="flex-1 bg-purple-600 text-white rounded-lg rounded-tr-none px-3 py-2">
+                <div className="flex-1 bg-green-600 text-white rounded-lg rounded-tr-none px-3 py-2">
                   <p className="text-sm">{msg.content}</p>
                   {msg.experiencesExtracted && msg.experiencesExtracted.length > 0 && (
-                    <div className="mt-1.5 pt-1.5 border-t border-purple-400">
-                      <span className="text-xs text-purple-200">
+                    <div className="mt-1.5 pt-1.5 border-t border-green-400">
+                      <span className="text-xs text-green-200">
                         {msg.experiencesExtracted.length} experience(s) captured
                       </span>
                     </div>
@@ -266,7 +266,7 @@ export default function DiscoveryChat({
         {optimisticMessage && (
           <div data-testid="optimistic-message">
             <div className="flex items-start space-x-2 justify-end">
-              <div className="flex-1 bg-purple-600 text-white rounded-lg rounded-tr-none px-3 py-2">
+              <div className="flex-1 bg-green-600 text-white rounded-lg rounded-tr-none px-3 py-2">
                 <p className="text-sm">{optimisticMessage === "skip" ? "(Skipped)" : optimisticMessage}</p>
               </div>
               <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -279,19 +279,19 @@ export default function DiscoveryChat({
         {/* AI Thinking Indicator (shown after optimistic message while waiting) */}
         {optimisticMessage && isSubmitting && (
           <div className="flex items-start space-x-2" data-testid="ai-thinking">
-            <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-              <span className="text-purple-600 text-xs font-medium">AI</span>
+            <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-green-600 text-xs font-medium">AI</span>
             </div>
             <div className="flex-1 bg-gray-50 rounded-lg rounded-tl-none px-3 py-2">
               <div className="flex items-center space-x-2">
                 <div className="flex space-x-1">
-                  <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" />
+                  <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce" />
                   <div
-                    className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce"
+                    className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce"
                     style={{ animationDelay: "0.2s" }}
                   />
                   <div
-                    className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce"
+                    className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce"
                     style={{ animationDelay: "0.4s" }}
                   />
                 </div>
@@ -305,8 +305,8 @@ export default function DiscoveryChat({
         {pendingPrompt && !optimisticMessage && (
           <div>
             <div className="flex items-start space-x-2">
-              <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-purple-600 text-xs font-medium">AI</span>
+              <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-green-600 text-xs font-medium">AI</span>
               </div>
               <div
                 className="flex-1 bg-gray-50 rounded-lg rounded-tl-none px-3 py-2 cursor-pointer"
@@ -318,7 +318,7 @@ export default function DiscoveryChat({
                 <p className="text-gray-800 text-sm">
                   {shouldTypePrompt ? typedPromptText : pendingPrompt.question}
                   {isTypingPrompt && (
-                    <span className="inline-block w-0.5 h-4 bg-purple-600 ml-0.5 animate-pulse" />
+                    <span className="inline-block w-0.5 h-4 bg-green-600 ml-0.5 animate-pulse" />
                   )}
                 </p>
                 {/* Show hint and gaps only after typing completes */}
@@ -351,8 +351,8 @@ export default function DiscoveryChat({
         {/* Waiting indicator when no pending prompt and no optimistic message */}
         {!pendingPrompt && !optimisticMessage && filteredMessages.length > 0 && (
           <div className="flex items-start space-x-2">
-            <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-              <span className="text-purple-600 text-xs font-medium">AI</span>
+            <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-green-600 text-xs font-medium">AI</span>
             </div>
             <div className="flex-1 bg-gray-50 rounded-lg rounded-tl-none px-3 py-2">
               <div className="flex space-x-1">
@@ -384,13 +384,13 @@ export default function DiscoveryChat({
               placeholder="Share your experience... (Shift+Enter for new line)"
               disabled={isSubmitting}
               rows={2}
-              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none disabled:bg-gray-100"
+              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none disabled:bg-gray-100"
             />
             <div className="flex flex-col space-y-1">
               <button
                 onClick={handleSubmit}
                 disabled={!response.trim() || isSubmitting}
-                className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
                 {isSubmitting ? "..." : "Send"}
               </button>

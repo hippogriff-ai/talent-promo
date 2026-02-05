@@ -157,7 +157,7 @@ BAD titles: "Tell me about leadership" (too vague), "Kubernetes experience gap" 
 
         # Set first topic to in_progress
         if agenda.topics:
-            agenda.topics[0]["status"] = "in_progress"
+            agenda.topics[0].status = "in_progress"
 
         logger.info(f"Generated discovery agenda with {len(topics)} topics")
         return agenda.model_dump()
@@ -985,6 +985,27 @@ async def discovery_node(state: ResumeState) -> dict:
 
         # Call interrupt to wait for user response
         user_response = interrupt(interrupt_payload)
+
+        # Check if this is a skip/confirm signal (not a real user answer)
+        if user_response == "discovery_complete":
+            logger.info("Discovery complete signal received, proceeding to drafting")
+            return {
+                "discovery_confirmed": True,
+                "discovery_skipped": True,
+                "discovery_phase": None,
+                "pending_prompt_id": None,
+                # Skip QA entirely and go straight to drafting
+                "current_step": "draft",
+                "sub_step": None,
+                "qa_complete": True,
+                "user_done_signal": True,
+                "discovery_agenda": discovery_agenda,
+                "discovery_prompts": discovery_prompts,
+                "discovery_messages": discovery_messages,
+                "discovered_experiences": discovered_experiences,
+                "discovery_exchanges": discovery_exchanges,
+                "updated_at": datetime.now().isoformat(),
+            }
 
         # Process user response with agenda context
         result = await _handle_user_response(

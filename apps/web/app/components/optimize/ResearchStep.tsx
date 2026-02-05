@@ -349,7 +349,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
         <>
           <hr className="border-gray-200" />
           <h4 id="section-gap-analysis" className="text-base font-semibold text-gray-900 flex items-center">
-            <svg className="w-5 h-5 mr-2 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5 mr-2 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
             Gap Analysis
@@ -407,7 +407,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
               <ul className="text-sm text-gray-600 space-y-2">
                 {gapAnalysis.transferable_skills.map((skill, idx) => (
                   <li key={idx} className="flex items-start">
-                    <span className="text-indigo-500 mr-2 mt-0.5 flex-shrink-0">→</span>
+                    <span className="text-green-500 mr-2 mt-0.5 flex-shrink-0">→</span>
                     <span>{skill}</span>
                   </li>
                 ))}
@@ -421,7 +421,7 @@ export function ResearchFullView({ research, gapAnalysis }: { research: Research
               <h5 className="font-semibold text-gray-800 mb-2">Keywords to Include ({gapAnalysis.keywords_to_include.length})</h5>
               <div className="flex flex-wrap gap-2">
                 {gapAnalysis.keywords_to_include.map((kw, idx) => (
-                  <span key={idx} className="px-3 py-1 bg-indigo-100 text-indigo-700 text-sm rounded-full">
+                  <span key={idx} className="px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full">
                     {kw}
                   </span>
                 ))}
@@ -1090,10 +1090,10 @@ export default function ResearchStep({
             {research.industry_trends && research.industry_trends.length > 0 && (
               <div>
                 <p className="text-sm font-medium text-gray-700 mb-2">Industry Trends</p>
-                <ul className="text-xs text-gray-600 space-y-1.5 bg-purple-50/50 p-3 rounded-lg">
+                <ul className="text-xs text-gray-600 space-y-1.5 bg-green-50/50 p-3 rounded-lg">
                   {research.industry_trends.slice(0, 5).map((trend, idx) => (
                     <li key={idx} className="flex items-start">
-                      <span className="text-purple-500 mr-2 mt-0.5">→</span>
+                      <span className="text-green-500 mr-2 mt-0.5">→</span>
                       <span>{trend}</span>
                     </li>
                   ))}

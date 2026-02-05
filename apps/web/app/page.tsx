@@ -4,26 +4,13 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Header from "./components/layout/Header";
 import OnboardingGuide from "./components/layout/OnboardingGuide";
+import { useTurnstile } from "./hooks/useTurnstile";
 
 const FIRST_VISIT_KEY = "talent_promo:first_visit";
 const PENDING_INPUT_KEY = "talent_promo:pending_input";
 const RECENT_LINKEDIN_KEY = "talent_promo:recent_linkedin";
 const RECENT_JOB_KEY = "talent_promo:recent_job";
 const MAX_RECENT = 2;
-
-// Fun human verification questions - bots can't answer these!
-const HUMAN_CHALLENGES = [
-  { question: "What sound does a cat make?", answers: ["meow", "mew", "purr"] },
-  { question: "What color is a ripe banana?", answers: ["yellow"] },
-  { question: "How many legs does a dog have?", answers: ["4", "four"] },
-  { question: "What do cows drink?", answers: ["water"] },  // Trick question - most say "milk"
-  { question: "What's the opposite of 'hot'?", answers: ["cold", "cool"] },
-  { question: "What day comes after Monday?", answers: ["tuesday", "tues"] },
-  { question: "What do you call a baby dog?", answers: ["puppy", "pup"] },
-  { question: "Is water wet? (yes/no)", answers: ["yes", "no", "both"] },  // Philosophy!
-  { question: "What noise does a duck make?", answers: ["quack"] },
-  { question: "How many eyes do you have?", answers: ["2", "two"] },
-];
 
 const features = [
   {
@@ -44,7 +31,7 @@ const features = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
       </svg>
     ),
-    color: "from-purple-500 to-pink-500",
+    color: "from-green-500 to-emerald-500",
   },
   {
     title: "Drafting",
@@ -103,12 +90,7 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [honeypot, setHoneypot] = useState("");  // Bot trap - should remain empty
-
-  // Human verification challenge - initialize to 0 on server, randomize on client to avoid hydration mismatch
-  const [challengeIndex, setChallengeIndex] = useState(0);
-  const [challengeAnswer, setChallengeAnswer] = useState("");
-  const [challengePassed, setChallengePassed] = useState(false);
-  const currentChallenge = HUMAN_CHALLENGES[challengeIndex];
+  const turnstile = useTurnstile();
 
   // Recent URLs for quick selection
   const [recentLinkedin, setRecentLinkedin] = useState<string[]>([]);
@@ -130,9 +112,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    // Randomize challenge on client side to avoid hydration mismatch
-    setChallengeIndex(Math.floor(Math.random() * HUMAN_CHALLENGES.length));
-
     // Check if first visit
     const hasVisited = localStorage.getItem(FIRST_VISIT_KEY);
     if (!hasVisited) {
@@ -167,18 +146,6 @@ export default function Home() {
     } catch {
       return false;
     }
-  };
-
-  const checkChallengeAnswer = () => {
-    const normalized = challengeAnswer.toLowerCase().trim();
-    const isCorrect = currentChallenge.answers.some(a => normalized === a.toLowerCase());
-    setChallengePassed(isCorrect);
-    if (!isCorrect && challengeAnswer.trim()) {
-      setError("Hmm, that doesn't seem right. Try again!");
-    } else {
-      setError("");
-    }
-    return isCorrect;
   };
 
   const handleFileUpload = async (file: File) => {
@@ -267,7 +234,7 @@ export default function Home() {
     const hasJob = jobInputMode === "url"
       ? jobUrl && isValidUrl(jobUrl)
       : jobText.trim().length > 50;
-    return hasProfile && hasJob && challengePassed && !isSubmitting;
+    return hasProfile && hasJob && turnstile.isReady && !isSubmitting;
   };
 
   const handleSubmit = async () => {
@@ -302,6 +269,7 @@ export default function Home() {
       jobUrl: jobInputMode === "url" ? jobUrl : undefined,
       resumeText: inputMode === "paste" ? resumeText : undefined,
       jobText: jobInputMode === "paste" ? jobText : undefined,
+      turnstileToken: turnstile.token || undefined,
     };
 
     localStorage.setItem(PENDING_INPUT_KEY, JSON.stringify(inputData));
@@ -353,7 +321,7 @@ export default function Home() {
       <section className="relative overflow-hidden">
         {/* Background decoration */}
         <div className="absolute inset-0 -z-10">
-          <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob" />
+          <div className="absolute top-0 -left-4 w-72 h-72 bg-green-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob" />
           <div className="absolute top-0 -right-4 w-72 h-72 bg-yellow-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000" />
           <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000" />
         </div>
@@ -363,7 +331,7 @@ export default function Home() {
             {/* Left side - Headlines */}
             <div>
               {/* Badge */}
-              <div className="inline-flex items-center px-4 py-1.5 rounded-full bg-indigo-100 text-indigo-700 text-sm font-medium mb-6">
+              <div className="inline-flex items-center px-4 py-1.5 rounded-full bg-green-100 text-green-700 text-sm font-medium mb-6">
                 <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                 </svg>
@@ -373,7 +341,7 @@ export default function Home() {
               {/* Headline */}
               <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 tracking-tight mb-6">
                 Land Your Dream Job with
-                <span className="block text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">
+                <span className="block text-transparent bg-clip-text bg-gradient-to-r from-green-600 to-emerald-600">
                   AI-Tailored Resumes
                 </span>
               </h1>
@@ -496,7 +464,7 @@ export default function Home() {
                     value={resumeText}
                     onChange={(e) => setResumeText(e.target.value)}
                     rows={4}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all resize-none"
                   />
                 ) : inputMode === "upload" ? (
                   <div>
@@ -507,10 +475,10 @@ export default function Home() {
                       onClick={() => fileInputRef.current?.click()}
                       className={`relative flex flex-col items-center justify-center px-4 py-8 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
                         isDragOver
-                          ? "border-indigo-500 bg-indigo-50"
+                          ? "border-green-500 bg-green-50"
                           : isUploading
                             ? "border-gray-300 bg-gray-50 cursor-wait"
-                            : "border-gray-300 hover:border-indigo-400 hover:bg-gray-50"
+                            : "border-gray-300 hover:border-green-400 hover:bg-gray-50"
                       }`}
                     >
                       <input
@@ -526,7 +494,7 @@ export default function Home() {
                       />
                       {isUploading ? (
                         <>
-                          <svg className="animate-spin w-8 h-8 text-indigo-500 mb-2" fill="none" viewBox="0 0 24 24">
+                          <svg className="animate-spin w-8 h-8 text-green-500 mb-2" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                           </svg>
@@ -564,7 +532,7 @@ export default function Home() {
                         onChange={(e) => setLinkedinUrl(e.target.value)}
                         onFocus={() => setShowLinkedinDropdown(recentLinkedin.length > 0)}
                         onBlur={() => setTimeout(() => setShowLinkedinDropdown(false), 150)}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
                       />
                       {showLinkedinDropdown && recentLinkedin.length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
@@ -579,7 +547,7 @@ export default function Home() {
                                 setLinkedinUrl(url);
                                 setShowLinkedinDropdown(false);
                               }}
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 truncate"
+                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 truncate"
                             >
                               {url}
                             </button>
@@ -647,7 +615,7 @@ export default function Home() {
                       onChange={(e) => setJobUrl(e.target.value)}
                       onFocus={() => setShowJobDropdown(recentJob.length > 0)}
                       onBlur={() => setTimeout(() => setShowJobDropdown(false), 150)}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
                     />
                     {showJobDropdown && recentJob.length > 0 && (
                       <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
@@ -662,7 +630,7 @@ export default function Home() {
                               setJobUrl(url);
                               setShowJobDropdown(false);
                             }}
-                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 truncate"
+                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 truncate"
                           >
                             {url}
                           </button>
@@ -676,63 +644,24 @@ export default function Home() {
                     value={jobText}
                     onChange={(e) => setJobText(e.target.value)}
                     rows={4}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all resize-none"
                   />
                 )}
               </div>
 
-              {/* Human Verification - Fun challenge to stop bots */}
-              <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-100">
-                <div className="flex items-center mb-3">
-                  <span className="text-lg mr-2">🤖</span>
-                  <label className="text-sm font-medium text-gray-700">
-                    Quick human check
-                  </label>
-                  {challengePassed && (
-                    <span className="ml-2 text-green-600 text-sm font-medium flex items-center">
-                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      You&apos;re human!
-                    </span>
-                  )}
+              {/* Turnstile bot protection (invisible widget) */}
+              <div ref={turnstile.containerRef} className="mb-4" />
+              {turnstile.hasError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  Bot protection check failed. Please refresh the page and try again.
                 </div>
-                <p className="text-sm text-gray-600 mb-2 italic">{currentChallenge.question}</p>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Your answer..."
-                    value={challengeAnswer}
-                    onChange={(e) => {
-                      setChallengeAnswer(e.target.value);
-                      if (challengePassed) setChallengePassed(false);  // Reset if they change answer
-                    }}
-                    onBlur={checkChallengeAnswer}
-                    onKeyDown={(e) => e.key === "Enter" && checkChallengeAnswer()}
-                    disabled={challengePassed}
-                    className={`flex-1 px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all ${
-                      challengePassed
-                        ? "bg-green-50 border-green-300 text-green-700"
-                        : "border-gray-200"
-                    }`}
-                  />
-                  {!challengePassed && (
-                    <button
-                      type="button"
-                      onClick={checkChallengeAnswer}
-                      className="px-4 py-2 text-sm font-medium text-purple-700 bg-purple-100 rounded-lg hover:bg-purple-200 transition-all"
-                    >
-                      Check
-                    </button>
-                  )}
-                </div>
-              </div>
+              )}
 
               {/* Submit Button */}
               <button
                 onClick={handleSubmit}
                 disabled={!canSubmit()}
-                className="w-full py-4 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40 disabled:shadow-none flex items-center justify-center"
+                className="w-full py-4 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40 disabled:shadow-none flex items-center justify-center"
               >
                 {isSubmitting ? (
                   <>
@@ -824,7 +753,7 @@ export default function Home() {
               <div className="space-y-6">
                 {benefits.map((benefit) => (
                   <div key={benefit.title} className="flex items-start">
-                    <div className="flex-shrink-0 w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                    <div className="flex-shrink-0 w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center text-green-600">
                       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={benefit.icon} />
                       </svg>
@@ -851,7 +780,7 @@ export default function Home() {
                   <div className="h-4 bg-gray-100 rounded w-full" />
                   <div className="h-4 bg-gray-100 rounded w-5/6" />
                   <div className="mt-6 pt-4 border-t border-gray-100">
-                    <div className="h-6 bg-indigo-100 rounded w-1/3 mb-3" />
+                    <div className="h-6 bg-green-100 rounded w-1/3 mb-3" />
                     <div className="h-3 bg-gray-100 rounded w-full mb-2" />
                     <div className="h-3 bg-gray-100 rounded w-4/5 mb-2" />
                     <div className="h-3 bg-gray-100 rounded w-full" />
@@ -882,7 +811,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex items-center space-x-2 mb-4 md:mb-0">
-              <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
+              <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>

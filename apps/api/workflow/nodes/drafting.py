@@ -151,6 +151,12 @@ GAP HANDLING:
 - GOOD: "Built data pipelines in Python" (if they did build data pipelines)
 - BAD: "Led enterprise AI initiatives" (if they did Python scripting, not AI leadership)
 - When a gap is real, leave it out. Better to be honest than to stretch.
+- Use TRANSFERABLE SKILLS to bridge gaps: if the gap analysis identifies a skill as transferable,
+  reframe the candidate's existing experience using that angle. E.g., "project coordination" transfers
+  to "program management" — but only if the source material supports the underlying experience.
+- Use POTENTIAL CONCERNS to inoculate: if a concern is flagged (e.g., short tenure, career gap,
+  industry switch), address it through framing rather than hiding it. E.g., for a career gap,
+  highlight freelance/learning during that period if the source mentions it.
 
 USER STYLE PREFERENCES (apply if provided):
 - Tone: formal/conversational/confident/humble
@@ -462,6 +468,12 @@ What to Highlight:
 {chr(10).join('- ' + e for e in gap_analysis.get('recommended_emphasis', []))}
 
 Keywords to Include: {', '.join(gap_analysis.get('keywords_to_include', []))}
+
+Transferable Skills (reposition these for the target role):
+{chr(10).join('- ' + s for s in gap_analysis.get('transferable_skills', []))}
+
+Potential Concerns (address proactively in framing):
+{chr(10).join('- ' + c if isinstance(c, str) else '- ' + (c.get('concern', '') + (' — ' + c.get('mitigation', '') if c.get('mitigation') else '')) for c in gap_analysis.get('potential_concerns', []))}
 
 ---
 

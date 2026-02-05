@@ -405,7 +405,7 @@ export default function SettingsPage() {
                         className="flex items-center justify-between p-2 bg-gray-50 rounded"
                       >
                         <div>
-                          <span className="text-xs font-medium text-purple-600">Profile</span>
+                          <span className="text-xs font-medium text-green-600">Profile</span>
                           <span className="text-xs text-gray-500 ml-2">
                             {new Date(data.savedAt).toLocaleDateString()}
                           </span>

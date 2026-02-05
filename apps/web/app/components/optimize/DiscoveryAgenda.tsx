@@ -74,7 +74,7 @@ export default function DiscoveryAgenda({
         {/* Progress bar */}
         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
           <div
-            className="h-full bg-purple-600 transition-all duration-500 ease-out"
+            className="h-full bg-green-600 transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -93,7 +93,7 @@ export default function DiscoveryAgenda({
               key={topic.id}
               className={`flex items-start space-x-2 py-1.5 px-2 rounded transition-colors ${
                 isCurrent
-                  ? "bg-purple-50 border border-purple-200"
+                  ? "bg-green-50 border border-green-200"
                   : ""
               }`}
             >
@@ -132,7 +132,7 @@ export default function DiscoveryAgenda({
                 ) : isCurrent ? (
                   // Arrow for current
                   <svg
-                    className="w-4 h-4 text-purple-600"
+                    className="w-4 h-4 text-green-600"
                     fill="currentColor"
                     viewBox="0 0 20 20"
                   >
@@ -169,7 +169,7 @@ export default function DiscoveryAgenda({
                       : isSkipped
                       ? "text-gray-400"
                       : isCurrent
-                      ? "text-purple-900"
+                      ? "text-green-900"
                       : "text-gray-700"
                   }`}
                 >
@@ -177,7 +177,7 @@ export default function DiscoveryAgenda({
                 </p>
                 {/* Show goal for current topic */}
                 {isCurrent && topic.goal && (
-                  <p className="text-xs text-purple-600 mt-0.5 line-clamp-2">
+                  <p className="text-xs text-green-600 mt-0.5 line-clamp-2">
                     {topic.goal}
                   </p>
                 )}
@@ -191,7 +191,7 @@ export default function DiscoveryAgenda({
 
               {/* Prompt counter for in-progress topics */}
               {(isCurrent || topic.status === "in_progress") && (
-                <span className="flex-shrink-0 text-xs text-purple-500 bg-purple-100 px-1.5 py-0.5 rounded">
+                <span className="flex-shrink-0 text-xs text-green-500 bg-green-100 px-1.5 py-0.5 rounded">
                   {topic.prompts_asked}/{topic.max_prompts}
                 </span>
               )}

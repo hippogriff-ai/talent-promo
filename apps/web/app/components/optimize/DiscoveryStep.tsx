@@ -226,10 +226,6 @@ export default function DiscoveryStep({
   };
 
   const handleSkipDiscovery = async () => {
-    if (!confirm("Are you sure you want to skip the discovery phase? The AI will create your resume based solely on what you provided initially.")) {
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       const response = await fetch(
@@ -405,9 +401,9 @@ export default function DiscoveryStep({
           )}
 
           {/* Tips */}
-          <div className="bg-purple-50 rounded-lg p-4">
-            <h4 className="font-medium text-purple-900 mb-2">Tips</h4>
-            <ul className="text-sm text-purple-800 space-y-2">
+          <div className="bg-green-50 rounded-lg p-4">
+            <h4 className="font-medium text-green-900 mb-2">Tips</h4>
+            <ul className="text-sm text-green-800 space-y-2">
               <li className="flex items-start">
                 <span className="mr-2">1.</span>
                 <span>

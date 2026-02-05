@@ -140,9 +140,9 @@ export default function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProp
                 onClick={() => setCurrentStep(index)}
                 className={`w-2.5 h-2.5 rounded-full transition-all ${
                   index === currentStep
-                    ? "bg-indigo-600 w-6"
+                    ? "bg-green-600 w-6"
                     : index < currentStep
-                    ? "bg-indigo-300"
+                    ? "bg-green-300"
                     : "bg-gray-300"
                 }`}
               />
@@ -153,10 +153,10 @@ export default function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProp
           <div className="pt-16 pb-8 px-8">
             {/* Step indicator */}
             <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl text-white mb-4">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl text-white mb-4">
                 {step.icon}
               </div>
-              <div className="text-sm font-medium text-indigo-600 mb-2">
+              <div className="text-sm font-medium text-green-600 mb-2">
                 Step {currentStep + 1} of {steps.length}
               </div>
               <h2 className="text-2xl font-bold text-gray-900">{step.title}</h2>
@@ -174,7 +174,7 @@ export default function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProp
                 {step.details.map((detail, index) => (
                   <li key={index} className="flex items-start">
                     <svg
-                      className="w-5 h-5 text-indigo-500 mr-3 mt-0.5 flex-shrink-0"
+                      className="w-5 h-5 text-green-500 mr-3 mt-0.5 flex-shrink-0"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -208,7 +208,7 @@ export default function OnboardingGuide({ isOpen, onClose }: OnboardingGuideProp
 
               <button
                 onClick={handleNext}
-                className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm"
+                className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors shadow-sm"
               >
                 {currentStep === steps.length - 1 ? "Get Started" : "Next"}
               </button>

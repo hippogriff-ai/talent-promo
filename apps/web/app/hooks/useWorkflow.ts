@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { ValidationResults } from "../types/guardrails";
 
 
@@ -226,7 +226,7 @@ export interface UserPreferences {
 }
 
 export interface UseWorkflowReturn extends WorkflowState {
-  startWorkflow: (linkedinUrl?: string, jobUrl?: string, resumeText?: string, jobText?: string, userPreferences?: UserPreferences) => Promise<string>;
+  startWorkflow: (linkedinUrl?: string, jobUrl?: string, resumeText?: string, jobText?: string, userPreferences?: UserPreferences, turnstileToken?: string) => Promise<string>;
   resumeWorkflow: (threadId: string) => Promise<void>;
   submitAnswer: (answer: string) => Promise<void>;
   updateResume: (html: string) => Promise<void>;
@@ -270,7 +270,7 @@ export function useWorkflow(): UseWorkflowReturn {
 
   // Start new workflow
   const startWorkflow = useCallback(
-    async (linkedinUrl?: string, jobUrl?: string, resumeText?: string, jobText?: string, userPreferences?: UserPreferences): Promise<string> => {
+    async (linkedinUrl?: string, jobUrl?: string, resumeText?: string, jobText?: string, userPreferences?: UserPreferences, turnstileToken?: string): Promise<string> => {
       const response = await fetch(`/api/optimize/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -281,6 +281,7 @@ export function useWorkflow(): UseWorkflowReturn {
           resume_text: resumeText,
           job_text: jobText,
           user_preferences: userPreferences,
+          turnstile_token: turnstileToken,
         }),
       });
 
@@ -361,10 +362,12 @@ export function useWorkflow(): UseWorkflowReturn {
   );
 
   // Poll for status updates
+  const pollFailures = useRef(0);
   useEffect(() => {
     if (!state.threadId || state.status === "completed" || state.status === "error") {
       return;
     }
+    pollFailures.current = 0;
 
     const pollStatus = async () => {
       try {
@@ -374,9 +377,20 @@ export function useWorkflow(): UseWorkflowReturn {
         );
 
         if (!response.ok) {
-          console.error("Status poll failed");
+          pollFailures.current++;
+          if (response.status === 404 || pollFailures.current >= 3) {
+            console.warn(`Stopping poll: ${response.status === 404 ? "session not found" : `${pollFailures.current} consecutive failures (${response.status})`}`);
+            setState((prev) => ({
+              ...prev,
+              status: "error",
+              errors: [response.status === 404
+                ? "Session expired. Please start a new optimization."
+                : `Server error (${response.status}). Please try again.`],
+            }));
+          }
           return;
         }
+        pollFailures.current = 0;
 
         const data = await response.json();
 

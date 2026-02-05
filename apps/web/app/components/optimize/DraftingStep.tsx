@@ -677,7 +677,7 @@ export default function DraftingStep({
               <button
                 onClick={handlePreviewPdf}
                 disabled={isPreviewLoading || !editor}
-                className="px-4 py-1.5 bg-purple-100 text-purple-700 text-sm rounded hover:bg-purple-200 disabled:opacity-50 transition-colors flex items-center"
+                className="px-4 py-1.5 bg-green-100 text-green-700 text-sm rounded hover:bg-green-200 disabled:opacity-50 transition-colors flex items-center"
                 title="Preview how your resume will look as a PDF"
               >
                 {isPreviewLoading ? (

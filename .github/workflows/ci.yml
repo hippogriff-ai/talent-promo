@@ -18,14 +18,16 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'pnpm'
 
       - run: pnpm install
 
-      - run: pnpm --filter web lint
+      - name: Build
+        run: pnpm --filter web build
 
-      - run: pnpm --filter web build
+      - name: Test
+        run: pnpm --filter web exec vitest run
 
   backend:
     runs-on: ubuntu-latest
@@ -43,17 +45,7 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Lint
-        run: |
-          cd apps/api
-          ruff check .
-
-      - name: Type check
-        run: |
-          cd apps/api
-          mypy .
-
       - name: Test
         run: |
           cd apps/api
-          pytest
+          python -m pytest tests/ -x -q

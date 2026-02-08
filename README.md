@@ -318,7 +318,3 @@ Browser-side memory system (localStorage):
 - **LLM**: Anthropic Claude
 - **Web Search**: EXA API
 - **Safety**: Custom guardrails (7 modules, 182+ tests)
-
-## License
-
-Private - All rights reserved

@@ -85,6 +85,8 @@ export default function Home() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [uploadSuccess, setUploadSuccess] = useState("");
+  const [showResumePreview, setShowResumePreview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -150,6 +152,7 @@ export default function Home() {
 
   const handleFileUpload = async (file: File) => {
     setUploadError("");
+    setUploadSuccess("");
     setUploadedFile(file);
 
     // Validate file type
@@ -181,6 +184,11 @@ export default function Home() {
         throw new Error(`Server error: ${res.status}`);
       }
 
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Server returned an unexpected response. Please try again.");
+      }
+
       const data = await res.json();
       if (!data.success) {
         setUploadError(data.error || "Failed to parse document.");
@@ -198,9 +206,14 @@ export default function Home() {
       setResumeText(data.text);
       setInputMode("paste");
       setUploadedFile(null);
+      setUploadSuccess(`Extracted text from ${file.name}`);
     } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      const isNetworkError = message === "Failed to fetch" || message.includes("NetworkError");
       setUploadError(
-        err instanceof Error ? err.message : "Failed to upload file. Please try again."
+        isNetworkError
+          ? "Could not reach the server. Please check your connection and try again."
+          : message || "Failed to upload file. Please try again."
       );
       setUploadedFile(null);
     } finally {
@@ -284,6 +297,30 @@ export default function Home() {
 
       <OnboardingGuide isOpen={showGuide} onClose={() => setShowGuide(false)} />
 
+      {/* Resume text preview modal */}
+      {showResumePreview && resumeText && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowResumePreview(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Extracted Resume Text</h3>
+              <button onClick={() => setShowResumePreview(false)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-4 overflow-y-auto flex-1">
+              <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">{resumeText}</pre>
+            </div>
+            <div className="px-6 py-3 border-t bg-gray-50 rounded-b-xl flex justify-end">
+              <button onClick={() => setShowResumePreview(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Demo Disclaimer Banner */}
       <div className="bg-amber-50 border-b border-amber-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
@@ -326,8 +363,8 @@ export default function Home() {
           <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000" />
         </div>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20">
-          <div className="grid lg:grid-cols-2 gap-12 items-start pt-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+          <div className="grid lg:grid-cols-2 gap-12 items-start">
             {/* Left side - Headlines */}
             <div>
               {/* Badge */}
@@ -459,13 +496,32 @@ export default function Home() {
                 </div>
 
                 {inputMode === "paste" ? (
-                  <textarea
-                    placeholder="Paste your resume text here..."
-                    value={resumeText}
-                    onChange={(e) => setResumeText(e.target.value)}
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all resize-none"
-                  />
+                  <div>
+                    {uploadSuccess && (
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-xs text-green-700 flex items-center">
+                          <svg className="w-3.5 h-3.5 mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          {uploadSuccess}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowResumePreview(true)}
+                          className="text-xs text-green-700 hover:text-green-900 font-medium underline"
+                        >
+                          Preview full text
+                        </button>
+                      </div>
+                    )}
+                    <textarea
+                      placeholder="Paste your resume text here..."
+                      value={resumeText}
+                      onChange={(e) => { setResumeText(e.target.value); setUploadSuccess(""); }}
+                      rows={4}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all resize-none"
+                    />
+                  </div>
                 ) : inputMode === "upload" ? (
                   <div>
                     <div

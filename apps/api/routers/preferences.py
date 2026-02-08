@@ -9,7 +9,6 @@ Endpoints:
 """
 
 import logging
-import uuid
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException
@@ -25,17 +24,11 @@ from services.preferences_service import (
     get_preferences_service,
 )
 from workflow.nodes.memory import learn_preferences_from_events, merge_preferences
+from routers.deps import get_anonymous_user_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/preferences", tags=["preferences"])
-
-
-def get_anonymous_user_id(
-    x_anonymous_id: Optional[str] = Header(None, alias="X-Anonymous-ID")
-) -> str:
-    """Get anonymous user ID from header or generate one."""
-    return x_anonymous_id or f"anon_{uuid.uuid4().hex[:12]}"
 
 
 # ==================== Request/Response Models ====================

@@ -275,9 +275,12 @@ class TestDiscoveryConfirm:
 class TestDraftingEndpoints:
     """Integration tests for drafting endpoints."""
 
-    def test_approve_draft_with_pending_suggestions(self):
-        """BUG_007: Should reject approval when suggestions are pending."""
-        with patch("routers.optimize._run_workflow", new_callable=AsyncMock):
+    def test_approve_draft_auto_resolves_pending_suggestions(self):
+        """Pending suggestions are auto-declined on approve (no UI to resolve them)."""
+        with (
+            patch("routers.optimize._run_workflow", new_callable=AsyncMock),
+            patch("routers.optimize.verify_turnstile_token", new_callable=AsyncMock),
+        ):
             create_response = client.post(
                 "/api/optimize/start",
                 json={
@@ -292,15 +295,20 @@ class TestDraftingEndpoints:
         _workflows[thread_id]["state"]["draft_suggestions"] = [
             {"id": "sug_1", "status": "pending", "rationale": "Add keywords"}
         ]
-        _workflows[thread_id]["state"]["resume_html"] = "<h1>Name</h1><p>Summary</p><h2>Experience</h2><ul><li>Led project</li></ul><h2>Skills</h2><p>Python</p><h2>Education</h2><p>BS CS</p>"
+        _workflows[thread_id]["state"]["resume_html"] = "<h1>Name</h1><h2>Professional Summary</h2><p>Experienced engineer.</p><h2>Experience</h2><h3>Engineer | Acme | 2020-2024</h3><ul><li>Led project delivering 30% improvement</li></ul><h2>Skills</h2><p>Python, TypeScript</p><h2>Education</h2><p>BS CS - MIT 2020</p>"
+        _workflows[thread_id]["state"]["profile_text"] = "test"
+        _workflows[thread_id]["state"]["job_text"] = "test"
 
         response = client.post(
             f"/api/optimize/{thread_id}/drafting/approve",
             json={"approved": True}
         )
 
-        assert response.status_code == 400
-        assert "pending" in response.json()["detail"].lower()
+        assert response.status_code == 200
+        # Suggestion should have been auto-declined
+        suggestions = _workflows[thread_id]["state"]["draft_suggestions"]
+        assert suggestions[0]["status"] == "declined"
+        assert "resolved_at" in suggestions[0]
 
     def test_restore_nonexistent_version(self):
         """BUG_008: Should return 404 for non-existent version."""

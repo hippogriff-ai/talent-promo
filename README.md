@@ -66,6 +66,7 @@ Talent Promo uses an agentic workflow to analyze your profile and a target job p
 | **Claim Validation** | `claim_validator.py` | Verifies resume claims against source profile |
 | **Output Sanitization** | `output_validators.py` | AI self-references, refusal leak detection |
 | **Audit Logging** | `audit_logger.py` | Structured JSON logs for all security events |
+| **Bot Protection** | Cloudflare Turnstile | Invisible browser challenge on workflow start |
 
 See `specs/AI_GUARDRAILS_SPEC.md` for full implementation details.
 
@@ -185,6 +186,10 @@ EXA_API_KEY=...                    # For web search
 LANGCHAIN_API_KEY=ls-...
 LANGCHAIN_PROJECT=talent-promo
 LANGCHAIN_TRACING_V2=true
+
+# Optional (bot protection - bypassed when not set)
+TURNSTILE_SECRET_KEY=...                    # Backend secret key
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=...          # Frontend site key
 ```
 
 ### Quick Start with Make
@@ -290,6 +295,13 @@ Uses LangGraph's `interrupt()` function for:
 ### Streaming
 - SSE for step updates and interrupt notifications
 - `astream_events` for granular LLM token streaming
+
+### AI Editor Assist
+The Tiptap-based editor includes an AI assistant with two modes:
+- **Quick Actions**: Select text and apply one-click improvements (Improve Writing, Add Keywords, Add Metrics, Make Concise, More Professional)
+- **Chat**: Select text and describe changes in natural language; the AI replaces only the highlighted portion
+
+> **Next phase**: Whole-document mode — allow the AI to operate on the full document when no text is selected (diff-based review, similar to inline code suggestions). Not supported in the current iteration.
 
 ### Client Memory
 Browser-side memory system (localStorage):

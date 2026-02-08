@@ -152,6 +152,14 @@ export default function DiscoveryChat({
     }
   }, [optimisticMessage]);
 
+  // Scroll to bottom when input area appears (after typing completes)
+  // The input area rendering pushes messages up, so we need another scroll
+  useEffect(() => {
+    if (pendingPrompt && (isPromptComplete || typedMessages.has(pendingPrompt.question))) {
+      requestAnimationFrame(() => scrollToBottom());
+    }
+  }, [isPromptComplete, pendingPrompt, typedMessages]);
+
   // Focus textarea when prompt appears
   useEffect(() => {
     if (pendingPrompt && textareaRef.current) {

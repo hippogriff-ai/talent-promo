@@ -12,10 +12,10 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timedelta
-from typing import Optional, Any
+from datetime import datetime
+from typing import Literal, Optional, Any
 
-from fastapi import APIRouter, HTTPException, Header, Cookie
+from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
 from langgraph.types import Command
@@ -24,10 +24,11 @@ from workflow.graph import get_workflow, create_initial_state
 from workflow.nodes.analysis import analyze_node
 from workflow.nodes.editor import get_editor_suggestion, regenerate_section
 from workflow.nodes.export import export_resume
-from validators import validate_urls, validate_linkedin_url, validate_job_url
+from validators import validate_urls
 from services.thread_metadata import get_metadata_service
 from middleware.rate_limit import check_rate_limit
-from guardrails import validate_input, validate_output
+from middleware.turnstile import verify_turnstile_token
+from guardrails import validate_input
 
 logger = logging.getLogger(__name__)
 
@@ -37,22 +38,6 @@ router = APIRouter(prefix="/api/optimize", tags=["resume-optimization"])
 # ============================================================================
 # Helper Functions
 # ============================================================================
-
-def _parse_timestamp(timestamp_str: str) -> Optional[datetime]:
-    """Parse ISO timestamp, handling Z suffix for UTC.
-
-    Args:
-        timestamp_str: ISO format timestamp string (e.g., "2025-01-11T12:00:00Z")
-
-    Returns:
-        Parsed datetime or None if invalid/empty.
-    """
-    if not timestamp_str:
-        return None
-    try:
-        return datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return None
 
 
 # ============================================================================
@@ -66,13 +51,7 @@ class StartWorkflowRequest(BaseModel):
     resume_text: Optional[str] = None  # If uploaded instead of LinkedIn
     job_text: Optional[str] = None  # If pasted instead of job URL
     user_preferences: Optional[dict] = None  # User's writing style preferences
-
-
-class WorkflowProgressStep(BaseModel):
-    """Progress status for a workflow step."""
-    status: str  # "pending", "in_progress", "completed", "error"
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    turnstile_token: Optional[str] = None  # Cloudflare Turnstile bot protection token
 
 
 class ProgressMessage(BaseModel):
@@ -129,7 +108,7 @@ class AnswerRequest(BaseModel):
 
 class EditorActionRequest(BaseModel):
     """Request for AI editor assistance."""
-    action: str  # "improve", "add_keywords", "quantify", "shorten", "rewrite", "fix_tone", "custom"
+    action: Literal["improve", "add_keywords", "quantify", "shorten", "rewrite", "fix_tone", "custom"]
     selected_text: str
     instructions: Optional[str] = None  # For custom action
 
@@ -163,38 +142,47 @@ from workflow.progress import (
     get_realtime_progress,
     clear_realtime_progress,
 )
-import asyncio
-from contextlib import asynccontextmanager
-
-
 _workflows: dict[str, dict] = {}
 _workflow_locks: dict[str, asyncio.Lock] = {}
 
+# File-based persistence for dev mode (survives server restarts)
+_WORKFLOWS_CACHE_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), ".workflow_cache.json"
+)
 
-def _get_workflow_lock(thread_id: str) -> asyncio.Lock:
-    """Get or create a lock for a specific thread_id.
 
-    Prevents race conditions when multiple concurrent requests
-    try to update the same workflow's state.
+def _persist_workflows():
+    """Save all workflows to disk (dev mode only)."""
+    try:
+        with open(_WORKFLOWS_CACHE_FILE, "w") as f:
+            json.dump(_workflows, f, default=str)
+        logger.debug(f"Persisted {len(_workflows)} workflows to disk cache")
+    except Exception as e:
+        logger.warning(f"Could not persist workflows to disk: {e}")
 
-    Uses setdefault() for atomic check-and-create to avoid TOCTOU race.
+
+def _load_workflows_from_disk():
+    """Load workflows from disk cache on startup.
+
+    Note: Loaded workflows can serve status requests but cannot resume
+    LangGraph execution since MemorySaver state is lost on restart.
+    The frontend validates sessions against /status before offering resume.
     """
-    return _workflow_locks.setdefault(thread_id, asyncio.Lock())
+    if os.path.exists(_WORKFLOWS_CACHE_FILE):
+        try:
+            with open(_WORKFLOWS_CACHE_FILE, "r") as f:
+                data = json.load(f)
+            # Mark all loaded workflows as recovered from disk
+            for thread_id, wd in data.items():
+                wd["recovered_from_disk"] = True
+            _workflows.update(data)
+            logger.info(f"Loaded {len(data)} workflows from disk cache")
+        except Exception as e:
+            logger.warning(f"Could not load workflow cache: {e}")
 
 
-@asynccontextmanager
-async def _workflow_data_lock(thread_id: str):
-    """Context manager for thread-safe workflow data access.
-
-    Usage:
-        async with _workflow_data_lock(thread_id):
-            data = _get_workflow_data(thread_id)
-            # modify data
-            _save_workflow_data(thread_id, data)
-    """
-    lock = _get_workflow_lock(thread_id)
-    async with lock:
-        yield
+# Auto-load on import
+_load_workflows_from_disk()
 
 
 def _get_workflow_data(thread_id: str) -> dict:
@@ -252,12 +240,14 @@ def _get_workflow_data(thread_id: str) -> dict:
 
 
 def _save_workflow_data(thread_id: str, data: dict):
-    """Save workflow data to in-memory cache.
+    """Save workflow data to in-memory cache and persist to disk.
 
     Note: The actual state persistence is handled by LangGraph's checkpointer.
     This cache is for quick access to workflow metadata.
+    Disk persistence allows recovery after server restarts.
     """
     _workflows[thread_id] = data
+    _persist_workflows()
 
 
 def _enrich_job_posting(state: dict) -> dict | None:
@@ -313,6 +303,9 @@ async def start_workflow(
     """
     # Get client IP from headers (for proxied requests) or fall back to generic
     client_ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else (x_real_ip or "unknown")
+
+    # Verify Turnstile token BEFORE rate limit (so bot requests don't consume rate limit slots)
+    await verify_turnstile_token(request.turnstile_token, client_ip)
 
     # Check rate limit (3 requests per IP per day)
     allowed, remaining, reset_time = check_rate_limit(client_ip)
@@ -442,8 +435,6 @@ async def _run_workflow(thread_id: str):
             # Get the interrupt value from the graph state
             workflow = get_workflow()
             state = await workflow.aget_state(config)
-
-            workflow_data = _workflows.get(thread_id, {})
             if state and state.values:
                 workflow_data["state"] = dict(state.values)
 
@@ -454,14 +445,14 @@ async def _run_workflow(thread_id: str):
         else:
             import traceback
             logger.error(f"Workflow {thread_id} error: {e}\n{traceback.format_exc()}")
-            workflow_data = _workflows.get(thread_id, {})
-            if "state" in workflow_data:
-                workflow_data["state"]["errors"] = [
-                    *workflow_data["state"].get("errors", []),
+            if thread_id in _workflows and "state" in _workflows[thread_id]:
+                wd = _workflows[thread_id]
+                wd["state"]["errors"] = [
+                    *wd["state"].get("errors", []),
                     str(e)
                 ]
-                workflow_data["state"]["current_step"] = "error"
-                _save_workflow_data(thread_id, workflow_data)
+                wd["state"]["current_step"] = "error"
+                _save_workflow_data(thread_id, wd)
     finally:
         # Reset context variable and clear real-time progress
         current_thread_id.reset(token)
@@ -618,7 +609,20 @@ async def _resume_workflow(thread_id: str, resume_value: Any = None):
 
     Uses async workflow methods for MemorySaver compatibility.
     For async workflow nodes, we must use ainvoke/aget_state.
+
+    Note: If the workflow was recovered from disk cache (after server restart),
+    the MemorySaver won't have its state and this will fail. The frontend
+    validates session availability before attempting resume.
     """
+    # Check if this workflow was recovered from disk — LangGraph can't resume it
+    # (MemorySaver state is lost on server restart)
+    workflow_data_check = _workflows.get(thread_id, {})
+    if workflow_data_check.get("recovered_from_disk"):
+        raise HTTPException(
+            status_code=409,
+            detail="Session was recovered after server restart but cannot be resumed. Please start a new optimization."
+        )
+
     try:
         workflow_data = _get_workflow_data(thread_id)
         config = workflow_data["config"]
@@ -661,8 +665,6 @@ async def _resume_workflow(thread_id: str, resume_value: Any = None):
 
             workflow = get_workflow()
             state = await workflow.aget_state(config)
-
-            workflow_data = _workflows.get(thread_id, {})
             if state and state.values:
                 workflow_data["state"] = dict(state.values)
 
@@ -670,7 +672,16 @@ async def _resume_workflow(thread_id: str, resume_value: Any = None):
             workflow_data["interrupt_value"] = getattr(e, 'value', None)
             _save_workflow_data(thread_id, workflow_data)
         else:
-            logger.error(f"Workflow resume error for {thread_id}: {e}")
+            import traceback
+            logger.error(f"Workflow resume error for {thread_id}: {e}\n{traceback.format_exc()}")
+            if thread_id in _workflows and "state" in _workflows[thread_id]:
+                wd = _workflows[thread_id]
+                wd["state"]["errors"] = [
+                    *wd["state"].get("errors", []),
+                    str(e)
+                ]
+                wd["state"]["current_step"] = "error"
+                _save_workflow_data(thread_id, wd)
 
 
 class DiscoveryConfirmRequest(BaseModel):
@@ -685,6 +696,8 @@ async def confirm_discovery(thread_id: str, request: DiscoveryConfirmRequest):
     Requires at least 3 conversation exchanges before allowing confirmation.
     """
     workflow_data = _get_workflow_data(thread_id)
+    if workflow_data.get("recovered_from_disk"):
+        raise HTTPException(status_code=409, detail="Session cannot be resumed after server restart. Please start a new optimization.")
     state = workflow_data.get("state", {})
 
     # Check minimum exchanges
@@ -728,11 +741,17 @@ async def skip_discovery(thread_id: str):
     The resume will be generated based solely on their LinkedIn profile data.
     """
     workflow_data = _get_workflow_data(thread_id)
+    if workflow_data.get("recovered_from_disk"):
+        raise HTTPException(status_code=409, detail="Session cannot be resumed after server restart. Please start a new optimization.")
     state = workflow_data.get("state", {})
 
     # Update state to mark discovery as skipped/confirmed
     state["discovery_confirmed"] = True
     state["discovery_skipped"] = True  # Flag to indicate it was skipped
+    # Also mark QA as complete so qa_node short-circuits to drafting
+    # Without this, qa_node calls interrupt() and the workflow hangs
+    state["qa_complete"] = True
+    state["user_done_signal"] = True
     state["updated_at"] = datetime.now().isoformat()
     workflow_data["state"] = state
 
@@ -1153,6 +1172,94 @@ async def update_resume(thread_id: str, request: UpdateResumeRequest):
 
 
 # ============================================================================
+# Editor Sync and Chat Endpoints (with prompt caching)
+# ============================================================================
+
+
+class DraftingChatRequest(BaseModel):
+    """Request for chat with drafting agent."""
+    selected_text: str
+    user_message: str
+    chat_history: list[dict] = []
+    # No current_html - backend uses synced state
+
+
+class EditorSyncRequest(BaseModel):
+    """Request to sync editor state to backend."""
+    html: str  # Current editor content
+    original: str = ""  # For tracking (optional)
+    suggestion: str = ""  # For tracking (optional)
+    user_message: str = ""  # What user asked for (optional)
+
+
+@router.post("/{thread_id}/editor/sync")
+async def editor_sync(thread_id: str, request: EditorSyncRequest):
+    """Sync editor state to backend (called after apply or undo).
+
+    Also tracks accepted suggestions for preference learning.
+    """
+    workflow_data = _get_workflow_data(thread_id)
+    if not workflow_data:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    state = workflow_data.get("state", {})
+
+    # Sanitize and update resume state
+    sanitized_html = _sanitize_html(request.html)
+    state["resume_html"] = sanitized_html
+    state["updated_at"] = datetime.now().isoformat()
+
+    # Track for learning if this was an apply (not just a sync)
+    if request.original and request.suggestion:
+        suggestion_history = state.get("suggestion_history", [])
+        suggestion_history.append({
+            "original": request.original,
+            "suggestion": request.suggestion,
+            "user_message": request.user_message,
+            "timestamp": datetime.now().isoformat(),
+        })
+        state["suggestion_history"] = suggestion_history
+
+    workflow_data["state"] = state
+    _save_workflow_data(thread_id, workflow_data)
+
+    return {"success": True}
+
+
+@router.post("/{thread_id}/editor/chat")
+async def drafting_chat_endpoint(thread_id: str, request: DraftingChatRequest):
+    """Chat with drafting agent (full context, cached).
+
+    Uses synced state["resume_html"] - no HTML in request needed.
+    Reuses the same system prompt and context as initial draft generation.
+    Uses Anthropic prompt caching for efficiency on subsequent messages.
+    """
+    from workflow.nodes.drafting import drafting_chat
+
+    # Validate user input for injection attacks
+    validate_input(request.user_message, thread_id=thread_id)
+    validate_input(request.selected_text, thread_id=thread_id)
+
+    workflow_data = _get_workflow_data(thread_id)
+    if not workflow_data:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    state = workflow_data.get("state", {})
+
+    result = await drafting_chat(
+        state=state,
+        selected_text=request.selected_text,
+        user_message=request.user_message,
+        chat_history=request.chat_history,
+    )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Chat failed"))
+
+    return result
+
+
+# ============================================================================
 # Drafting Stage Endpoints
 # ============================================================================
 
@@ -1298,10 +1405,11 @@ async def handle_suggestion(thread_id: str, request: SuggestionActionRequest):
 
     # If accepted, apply the change to resume HTML
     resume_html = state.get("resume_html", "")
-    if request.action == "accept" and suggestion.get("original_text"):
+    if request.action == "accept" and suggestion.get("original_text") and suggestion.get("proposed_text"):
         resume_html = resume_html.replace(
             suggestion["original_text"],
-            suggestion["proposed_text"]
+            suggestion["proposed_text"],
+            1,  # Only replace first occurrence to avoid unintended duplicate replacements
         )
         state["resume_html"] = resume_html
 
@@ -1356,7 +1464,7 @@ async def handle_direct_edit(thread_id: str, request: DirectEditRequest):
             detail="Edit not applied: original text not found in resume"
         )
 
-    resume_html = resume_html.replace(request.original_text, request.new_text)
+    resume_html = resume_html.replace(request.original_text, request.new_text, 1)
     state["resume_html"] = resume_html
 
     # Create change log entry
@@ -1541,6 +1649,8 @@ async def revert_to_drafting(thread_id: str):
     state.pop("export_step", None)
 
     workflow_data["state"] = state
+    # Set interrupted so submitAnswer works if needed
+    workflow_data["interrupted"] = True
     _save_workflow_data(thread_id, workflow_data)
 
     return {
@@ -1559,29 +1669,26 @@ async def approve_draft(thread_id: str, request: ApproveDraftRequest):
     workflow_data = _get_workflow_data(thread_id)
     state = workflow_data.get("state", {})
 
-    # Check all suggestions are resolved
+    # Auto-resolve any pending suggestions (the editor UI doesn't surface them,
+    # so requiring manual resolution would block the user indefinitely).
     suggestions = state.get("draft_suggestions", [])
-    pending = [s for s in suggestions if s.get("status") == "pending"]
+    for s in suggestions:
+        if s.get("status") == "pending":
+            s["status"] = "declined"
+            s["resolved_at"] = datetime.now().isoformat()
+    state["draft_suggestions"] = suggestions
 
-    if pending:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot approve: {len(pending)} suggestions still pending"
-        )
-
-    # Validate resume
+    # Validate resume (advisory only — user explicitly approved, so don't block)
     resume_html = state.get("resume_html", "")
     validation = validate_resume(resume_html, source_text=state.get("profile_text", ""), job_text=state.get("job_text", ""))
 
-    if not validation.valid:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Validation failed: {'; '.join(validation.errors)}"
-        )
+    # Strip editor artifacts (highlight marks) before storing final version
+    clean_html = re.sub(r'<mark[^>]*>', '', resume_html)
+    clean_html = clean_html.replace('</mark>', '')
 
     # Mark as approved
     state["draft_approved"] = request.approved
-    state["resume_final"] = resume_html
+    state["resume_final"] = clean_html
     state["updated_at"] = datetime.now().isoformat()
 
     workflow_data["state"] = state
@@ -2003,6 +2110,115 @@ class CleanupResponse(BaseModel):
     errors: int
     thread_ids: list[str]
     message: str
+
+
+# ============================================================================
+# Dev: State Snapshots (save/restore for replay testing)
+# ============================================================================
+
+SNAPSHOT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "snapshots")
+
+
+@router.post("/{thread_id}/snapshot")
+async def save_snapshot(thread_id: str, label: Optional[str] = None):
+    """Save workflow state to a JSON file for replay testing.
+
+    Snapshots are saved to apps/api/snapshots/<thread_id>_<step>_<timestamp>.json.
+    Use POST /api/optimize/restore?file=<filename> to restore.
+    """
+    workflow_data = _get_workflow_data(thread_id)
+    state = workflow_data.get("state", {})
+    step = state.get("current_step", "unknown")
+
+    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+
+    tag = label or step
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{thread_id[:8]}_{tag}_{timestamp}.json"
+    filepath = os.path.join(SNAPSHOT_DIR, filename)
+
+    snapshot = {
+        "thread_id": thread_id,
+        "snapshot_label": tag,
+        "created_at": datetime.now().isoformat(),
+        "state": state,
+    }
+
+    with open(filepath, "w") as f:
+        json.dump(snapshot, f, indent=2, default=str)
+
+    logger.info(f"Saved snapshot: {filename}")
+    return {"filename": filename, "step": step, "path": filepath}
+
+
+@router.post("/restore")
+async def restore_snapshot(file: str):
+    """Restore workflow state from a snapshot file.
+
+    Creates a new thread_id with the saved state, ready for testing.
+    The workflow resumes from whatever step was captured.
+    """
+    filepath = os.path.join(SNAPSHOT_DIR, file)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail=f"Snapshot not found: {file}")
+
+    with open(filepath, "r") as f:
+        snapshot = json.load(f)
+
+    # Create a fresh thread_id for the restored workflow
+    new_thread_id = str(uuid.uuid4())
+    state = snapshot["state"]
+
+    config = {"configurable": {"thread_id": new_thread_id}}
+
+    _save_workflow_data(new_thread_id, {
+        "state": state,
+        "config": config,
+        "created_at": datetime.now().isoformat(),
+        "interrupted": True,  # Mark as interrupted so editor endpoints work
+        "interrupt_value": {
+            "interrupt_type": "draft_approval",
+            "message": "Restored from snapshot",
+        },
+        "restored_from_snapshot": file,
+    })
+
+    step = state.get("current_step", "unknown")
+    logger.info(f"Restored snapshot {file} as thread {new_thread_id} at step={step}")
+
+    return {
+        "thread_id": new_thread_id,
+        "restored_from": file,
+        "step": step,
+        "original_thread_id": snapshot.get("thread_id"),
+    }
+
+
+@router.get("/snapshots/list")
+async def list_snapshots():
+    """List all saved snapshots."""
+    if not os.path.exists(SNAPSHOT_DIR):
+        return {"snapshots": []}
+
+    files = sorted(os.listdir(SNAPSHOT_DIR), reverse=True)
+    snapshots = []
+    for f in files:
+        if f.endswith(".json"):
+            filepath = os.path.join(SNAPSHOT_DIR, f)
+            try:
+                with open(filepath, "r") as fh:
+                    data = json.load(fh)
+                snapshots.append({
+                    "filename": f,
+                    "thread_id": data.get("thread_id", ""),
+                    "label": data.get("snapshot_label", ""),
+                    "created_at": data.get("created_at", ""),
+                    "step": data.get("state", {}).get("current_step", ""),
+                })
+            except Exception:
+                snapshots.append({"filename": f, "error": "Could not read"})
+
+    return {"snapshots": snapshots}
 
 
 @router.post("/cleanup", response_model=CleanupResponse)

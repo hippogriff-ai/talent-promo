@@ -21,6 +21,29 @@ settings = get_settings()
 
 
 # =============================================================================
+# Text normalization (reduce token waste before passing to LLMs)
+# =============================================================================
+
+
+def _normalize_text(text: str) -> str:
+    """Strip redundant whitespace/page-breaks to save LLM tokens.
+
+    - Removes form-feed / page-break chars
+    - Strips trailing whitespace per line
+    - Collapses 3+ consecutive newlines into 2 (preserves paragraph breaks)
+    """
+    if not text:
+        return text
+    # Remove form-feed / vertical-tab / page-break characters
+    text = re.sub(r'[\f\v]', '\n', text)
+    # Strip trailing whitespace on every line
+    text = re.sub(r'[^\S\n]+$', '', text, flags=re.MULTILINE)
+    # Collapse 3+ consecutive newlines into 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+# =============================================================================
 # Simple Regex Extractors (no LLM needed)
 # =============================================================================
 
@@ -573,6 +596,10 @@ async def parallel_ingest_node(state: ResumeState) -> dict[str, Any]:
                                 f"Found: {profile_name} → {job_title} at {job_company}")
 
         logger.info(f"Simplified ingest complete: {profile_name} -> {job_title}@{job_company}")
+
+        # Normalize text to strip redundant newlines/page-breaks (saves LLM tokens)
+        profile_text = _normalize_text(profile_text)
+        job_text = _normalize_text(job_text)
 
         return {
             # Raw text fields (primary - used by downstream LLMs)

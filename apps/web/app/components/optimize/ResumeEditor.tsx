@@ -6,10 +6,10 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import Highlight from "@tiptap/extension-highlight";
-import { useEditorAssist, EditorAction } from "../../hooks/useEditorAssist";
+import { useEditorAssist, EditorAction, ChatMessage as HookChatMessage } from "../../hooks/useEditorAssist";
 import { JobPosting, GapAnalysis } from "../../hooks/useWorkflow";
 
-// Chat message type for highlight-and-chat feature
+// Chat message type for highlight-and-chat feature (extends hook type with UI fields)
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -52,14 +52,34 @@ export default function ResumeEditor({
     isLoading: isAssistLoading,
     error: assistError,
     requestSuggestion,
-    requestCustomSuggestion,
     clearSuggestion,
+    chatWithDraftingAgent,
+    syncEditor,
   } = useEditorAssist(threadId);
+
+  // Track last user message for sync tracking
+  const [lastUserMessage, setLastUserMessage] = useState("");
+
+  // localStorage key for auto-saving editor content
+  const editorStorageKey = `resume_agent:editor_html:${threadId}`;
 
   // Auto-scroll chat to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
+
+  // Load from localStorage if available (preserves unsaved edits across refreshes)
+  // Strip any persisted <mark> highlight tags (artifact from editor assist)
+  const stripMarks = (html: string) => html.replace(/<mark[^>]*>/gi, '').replace(/<\/mark>/gi, '');
+  const savedHtml = typeof window !== "undefined"
+    ? localStorage.getItem(editorStorageKey)
+    : null;
+  const rawContent = savedHtml || initialContent;
+  const cleanContent = stripMarks(rawContent);
+  // Persist cleaned version so <mark> tags don't reappear on refresh
+  if (typeof window !== "undefined" && cleanContent !== rawContent) {
+    try { localStorage.setItem(editorStorageKey, cleanContent); } catch { /* ignore */ }
+  }
 
   const editor = useEditor({
     extensions: [
@@ -76,7 +96,15 @@ export default function ResumeEditor({
         multicolor: true,
       }),
     ],
-    content: initialContent,
+    content: cleanContent,
+    onUpdate: ({ editor }) => {
+      // Auto-save to localStorage on every edit
+      try {
+        localStorage.setItem(editorStorageKey, editor.getHTML());
+      } catch {
+        // Ignore quota errors
+      }
+    },
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
       if (from !== to) {
@@ -105,6 +133,8 @@ export default function ResumeEditor({
     setIsSaving(true);
     try {
       await onSave(editor.getHTML());
+      // Clear localStorage draft — backend is now up to date
+      try { localStorage.removeItem(editorStorageKey); } catch { /* ignore */ }
     } catch (error) {
       console.error("Save failed:", error);
     } finally {
@@ -145,6 +175,17 @@ export default function ResumeEditor({
     setSelectedText("");
   }, [editor, highlightedRange]);
 
+  // Strip ALL highlight marks from the entire document (cleanup after applying suggestions)
+  const stripAllHighlights = useCallback(() => {
+    if (!editor) return;
+    const { state } = editor;
+    const highlightType = state.schema.marks.highlight;
+    if (!highlightType) return;
+    const { tr } = state;
+    tr.removeMark(0, state.doc.content.size, highlightType);
+    editor.view.dispatch(tr);
+  }, [editor]);
+
   // Handle focus on chat input - apply highlight to keep selection visible
   const handleChatFocus = () => {
     if (highlightedRange && editor) {
@@ -172,13 +213,21 @@ export default function ResumeEditor({
       editor.chain().setTextSelection({ from, to }).unsetHighlight().run();
     }
 
+    // Apply immediately (Tiptap auto-adds to undo history)
     editor.chain().focus().setTextSelection({ from, to }).deleteRange({ from, to }).insertContent(suggestion.suggestion).run();
+
+    // Strip any lingering highlight marks from the entire document
+    stripAllHighlights();
+
+    // Sync to backend (includes tracking for learning) - fire and forget
+    syncEditor(editor.getHTML(), suggestion.original, suggestion.suggestion, lastUserMessage);
+
     clearSuggestion();
     setHighlightedRange(null);
     setSelectedText("");
-  }, [suggestion, editor, clearSuggestion, highlightedRange]);
+  }, [suggestion, editor, clearSuggestion, highlightedRange, syncEditor, lastUserMessage, stripAllHighlights]);
 
-  // Handle chat message submission
+  // Handle chat message submission - uses drafting agent with full context
   const handleChatSubmit = async () => {
     if (!chatInput.trim() || !selectedText || isAssistLoading) return;
 
@@ -191,10 +240,17 @@ export default function ResumeEditor({
     };
 
     setChatMessages((prev) => [...prev, userMessage]);
+    setLastUserMessage(chatInput); // Track for sync
     setChatInput("");
 
-    // Request custom suggestion
-    const result = await requestCustomSuggestion(selectedText, chatInput);
+    // Convert chat messages to format expected by drafting agent
+    const chatHistory: HookChatMessage[] = chatMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    // Use drafting agent - backend uses synced state for full context
+    const result = await chatWithDraftingAgent(selectedText, chatInput, chatHistory);
 
     if (result) {
       const assistantMessage: ChatMessage = {
@@ -209,7 +265,7 @@ export default function ResumeEditor({
   };
 
   // Apply suggestion from chat message
-  const applyChatSuggestion = (suggestionText: string) => {
+  const applyChatSuggestion = useCallback((suggestionText: string) => {
     if (!editor) return;
 
     // Use the stored range if available (for when editor lost focus)
@@ -221,11 +277,20 @@ export default function ResumeEditor({
       if (highlightedRange) {
         editor.chain().setTextSelection({ from, to }).unsetHighlight().run();
       }
+
+      // Apply immediately (Tiptap auto-adds to undo history)
       editor.chain().focus().setTextSelection({ from, to }).deleteRange({ from, to }).insertContent(suggestionText).run();
+
+      // Strip any lingering highlight marks from the entire document
+      stripAllHighlights();
+
+      // Sync to backend (includes tracking for learning) - fire and forget
+      syncEditor(editor.getHTML(), selectedText, suggestionText, lastUserMessage);
+
       setHighlightedRange(null);
       setSelectedText("");
     }
-  };
+  }, [editor, highlightedRange, selectedText, lastUserMessage, syncEditor, stripAllHighlights]);
 
   // Handle Enter key in chat input
   const handleChatKeyDown = (e: React.KeyboardEvent) => {

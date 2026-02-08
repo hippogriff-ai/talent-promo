@@ -2,125 +2,153 @@
 
 ```yaml
 - generic [ref=e1]:
-  - alert [ref=e2]
-  - generic [ref=e3]:
-    - banner [ref=e4]:
-      - generic [ref=e5]:
-        - generic [ref=e6]:
-          - heading "Resume Optimizer" [level=1] [ref=e7]
-          - paragraph [ref=e8]: AI-powered resume tailoring for your target job
-        - button "Start New" [ref=e9] [cursor=pointer]:
-          - img [ref=e10]
-          - text: Start New
-    - navigation "Workflow progress" [ref=e14]:
-      - list [ref=e15]:
-        - listitem [ref=e16]:
-          - generic [ref=e17]:
-            - button "Research - completed" [ref=e18] [cursor=pointer]:
-              - img [ref=e19]
-            - generic [ref=e21]: Research
-        - listitem [ref=e24]:
-          - generic [ref=e25]:
-            - button "Discovery - active" [ref=e26] [cursor=pointer]:
-              - generic [ref=e27]: "2"
-            - generic [ref=e28]: Discovery
-        - listitem [ref=e31]:
-          - generic [ref=e32]:
-            - button "Drafting - locked" [disabled] [ref=e33]:
-              - img [ref=e34]
-            - generic [ref=e36]: Drafting
-        - listitem [ref=e39]:
-          - generic [ref=e40]:
-            - button "Export - locked" [disabled] [ref=e41]:
-              - img [ref=e42]
-            - generic [ref=e44]: Export
-    - main [ref=e45]:
-      - generic [ref=e46]:
-        - generic [ref=e47]:
-          - heading "Gap Analysis" [level=3] [ref=e48]
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - navigation [ref=e4]:
+        - generic [ref=e5]:
+          - link "Talent Promo" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img [ref=e8]
+            - generic [ref=e10]: Talent Promo
+          - generic [ref=e11]:
+            - link "Home" [ref=e12] [cursor=pointer]:
+              - /url: /
+            - link "Optimize Resume" [ref=e13] [cursor=pointer]:
+              - /url: /optimize
+            - button "How It Works" [ref=e14] [cursor=pointer]
+    - generic [ref=e17]:
+      - img [ref=e18]
+      - generic [ref=e20]:
+        - paragraph [ref=e21]: Demo App — Built by Vicki | Not for commercial use
+        - list [ref=e22]:
+          - listitem [ref=e23]:
+            - strong [ref=e24]: No server-side storage.
+            - text: All data stays in your browser and is never saved on our servers.
+          - listitem [ref=e25]:
+            - strong [ref=e26]: Tracing enabled.
+            - text: We use LangSmith for observability. Avoid entering sensitive PII (SSN, financial info, etc.).
+          - listitem [ref=e27]:
+            - strong [ref=e28]: Daily usage limit.
+            - text: Token costs are on me, so there's a cap per day.
+        - paragraph [ref=e29]:
+          - text: Want unlimited runs? Clone the
+          - link "GitHub repo" [ref=e30] [cursor=pointer]:
+            - /url: https://github.com/hippogriff-ai/talent-promo
+          - text: and use your own API key.
+    - generic [ref=e37]:
+      - generic [ref=e38]:
+        - generic [ref=e39]:
+          - img [ref=e40]
+          - text: AI-Powered Resume Optimization
+        - heading "Land Your Dream Job with AI-Tailored Resumes" [level=1] [ref=e42]:
+          - text: Land Your Dream Job with
+          - generic [ref=e43]: AI-Tailored Resumes
+        - paragraph [ref=e44]: Transform your LinkedIn profile into an ATS-optimized resume perfectly tailored for any job posting. Our AI uncovers your hidden strengths.
+        - generic [ref=e45]:
+          - generic [ref=e46]:
+            - img [ref=e47]
+            - text: Free demo
           - generic [ref=e49]:
-            - generic [ref=e50]:
-              - generic [ref=e51]:
-                - img [ref=e53]
-                - heading "Strengths (6)" [level=4] [ref=e55]
-              - list [ref=e56]:
-                - listitem [ref=e57]: 5+ years of engineering experience at Bloomberg, a top-tier tech and product-driven financial company
-                - listitem [ref=e58]: Full-stack experience as Senior Software Engineer at Bloomberg LP since 2019
-                - listitem [ref=e59]: Strong finance and analytical background (MBS Modeler, Risk Product Controller) demonstrates ability to understand complex systems and user needs
-                - listitem [ref=e60]: Experience at large-scale companies (Bloomberg, Societe Generale) serving millions of users
-                - listitem [ref=e61]: Proven ability to transition and learn new technologies (finance to engineering career pivot)
-                - listitem [ref=e62]: "Bloomberg's engineering culture shares similarities with OpenAI: fast-paced, product-driven, serving professional users"
-            - generic [ref=e63]:
+            - img [ref=e50]
+            - text: No password needed
+          - generic [ref=e52]:
+            - img [ref=e53]
+            - text: 2-5 min process
+      - generic [ref=e55]:
+        - heading "Start Your Optimization" [level=2] [ref=e56]
+        - paragraph [ref=e57]: Enter your profile and target job to get started.
+        - textbox [ref=e59]
+        - generic [ref=e60]:
+          - generic [ref=e61]: Your Profile
+          - generic [ref=e62]:
+            - button "Paste" [ref=e63] [cursor=pointer]:
               - generic [ref=e64]:
-                - img [ref=e66]
-                - heading "Gaps (6)" [level=4] [ref=e68]
-              - list [ref=e69]:
-                - listitem [ref=e70]: Resume doesn't explicitly mention React, JavaScript, or Python - critical technologies for this role
-                - listitem [ref=e71]: No visible mention of relational databases (Postgres/MySQL) experience
-                - listitem [ref=e72]: Limited evidence of direct user engagement or user-centric product development
-                - listitem [ref=e73]: No explicit mention of AI/ML interest or exposure
-                - listitem [ref=e74]: Unclear if experience includes building customer-facing features vs. internal tools
-                - listitem [ref=e75]: Missing details about specific technologies used at Bloomberg and scale of applications built
-            - generic [ref=e76]:
-              - generic [ref=e77]:
-                - img [ref=e79]
-                - heading "Opportunities (0)" [level=4] [ref=e81]
-              - list [ref=e82]:
-                - listitem [ref=e83]: Discovery will help find opportunities
-        - generic [ref=e84]:
-          - generic [ref=e86]:
-            - generic [ref=e87]:
-              - generic [ref=e88]:
-                - generic [ref=e89]:
-                  - heading "Discovery Conversation" [level=3] [ref=e90]
-                  - paragraph [ref=e91]: Let's uncover experiences you may have overlooked
-                - generic [ref=e93]: Question 1 of 7
-              - generic [ref=e96]:
-                - generic [ref=e97]: "Exchanges: 0/3"
-                - generic [ref=e98]: (3 more to unlock completion)
-            - generic [ref=e101]:
-              - generic [ref=e103]: AI
-              - generic [ref=e104]:
-                - paragraph [ref=e105]: At Bloomberg, when you were building MBS models or working on financial systems, what's a time you had to completely rethink your technical approach because the users - traders, analysts, whoever - were struggling with what you originally built? Walk me through how you figured out what they actually needed.
-                - paragraph [ref=e106]: "Hint: Uncover user-centric development experience and iterative problem-solving in financial tech context"
-                - generic [ref=e107]:
-                  - generic [ref=e108]: Limited evidence of direct user engagement
-                  - generic [ref=e109]: No visible customer-facing features experience
-            - generic [ref=e110]:
-              - generic [ref=e111]:
-                - textbox "Share your experience... (Shift+Enter for new line)" [active] [ref=e112]
-                - generic [ref=e113]:
-                  - button "Send" [disabled] [ref=e114]
-                  - button "Skip" [ref=e115] [cursor=pointer]
-              - paragraph [ref=e116]: The more detail you share, the better we can tailor your resume.
-          - generic [ref=e117]:
-            - generic [ref=e118]:
-              - heading "Discovered Experiences" [level=4] [ref=e119]
-              - paragraph [ref=e120]: No experiences discovered yet. Keep answering questions!
-            - generic [ref=e121]:
-              - heading "What We're Looking For" [level=4] [ref=e122]
-              - generic [ref=e124]:
-                - heading "Your Strengths" [level=4] [ref=e125]
-                - list [ref=e126]:
-                  - listitem [ref=e127]:
-                    - generic [ref=e128]: +
-                    - generic [ref=e129]: 5+ years of engineering experience at Bloomberg, a top-tier tech and product-driven financial company
-                  - listitem [ref=e130]:
-                    - generic [ref=e131]: +
-                    - generic [ref=e132]: Full-stack experience as Senior Software Engineer at Bloomberg LP since 2019
-                  - listitem [ref=e133]:
-                    - generic [ref=e134]: +
-                    - generic [ref=e135]: Strong finance and analytical background (MBS Modeler, Risk Product Controller) demonstrates ability to understand complex systems and user needs
-            - generic [ref=e136]:
-              - heading "Tips" [level=4] [ref=e137]
-              - list [ref=e138]:
-                - listitem [ref=e139]:
-                  - generic [ref=e140]: "1."
-                  - generic [ref=e141]: Think about side projects, volunteer work, or informal leadership roles
-                - listitem [ref=e142]:
-                  - generic [ref=e143]: "2."
-                  - generic [ref=e144]: Include specific metrics or outcomes when possible
-                - listitem [ref=e145]:
-                  - generic [ref=e146]: "3."
-                  - generic [ref=e147]: Don't dismiss experiences from different industries
+                - img [ref=e65]
+                - text: Paste
+            - button "Upload" [ref=e67] [cursor=pointer]:
+              - generic [ref=e68]:
+                - img [ref=e69]
+                - text: Upload
+            - button "LinkedIn" [ref=e71] [cursor=pointer]:
+              - generic [ref=e72]:
+                - img [ref=e73]
+                - text: LinkedIn
+          - generic [ref=e75]:
+            - textbox "https://linkedin.com/in/yourprofile" [ref=e77]: https://www.linkedin.com/in/vicki-zhang-a373995a
+            - paragraph [ref=e78]:
+              - img [ref=e79]
+              - text: LinkedIn blocks direct fetching. We'll search the web to find your profile.
+        - generic [ref=e81]:
+          - generic [ref=e82]: Target Job Posting
+          - generic [ref=e83]:
+            - button "Job URL" [ref=e84] [cursor=pointer]:
+              - generic [ref=e85]:
+                - img [ref=e86]
+                - text: Job URL
+            - button "Paste Job Description" [ref=e88] [cursor=pointer]:
+              - generic [ref=e89]:
+                - img [ref=e90]
+                - text: Paste Job Description
+          - textbox "https://jobs.example.com/software-engineer" [active] [ref=e93]: https://openai.com/careers/software-engineer-full-stack-new-york-city/
+        - button "Start Optimization" [ref=e96] [cursor=pointer]:
+          - text: Start Optimization
+          - img [ref=e97]
+        - paragraph [ref=e99]: Takes 2-5 minutes. You'll review before exporting.
+    - generic [ref=e101]:
+      - generic [ref=e102]:
+        - heading "Four Steps to Your Perfect Resume" [level=2] [ref=e103]
+        - paragraph [ref=e104]: Our AI-powered workflow guides you through creating a resume that stands out to both humans and applicant tracking systems.
+      - generic [ref=e105]:
+        - generic [ref=e108]:
+          - generic [ref=e109]: "1"
+          - img [ref=e111]
+          - heading "Research" [level=3] [ref=e113]
+          - paragraph [ref=e114]: AI analyzes your profile and target job to identify key requirements and gaps.
+        - generic [ref=e117]:
+          - generic [ref=e118]: "2"
+          - img [ref=e120]
+          - heading "Discovery" [level=3] [ref=e122]
+          - paragraph [ref=e123]: Guided conversation uncovers hidden experiences that match job requirements.
+        - generic [ref=e126]:
+          - generic [ref=e127]: "3"
+          - img [ref=e129]
+          - heading "Drafting" [level=3] [ref=e131]
+          - paragraph [ref=e132]: Generate an ATS-optimized resume with smart suggestions and rich editing.
+        - generic [ref=e134]:
+          - generic [ref=e135]: "4"
+          - img [ref=e137]
+          - heading "Export" [level=3] [ref=e139]
+          - paragraph [ref=e140]: Download in multiple formats with ATS analysis and LinkedIn optimization tips.
+    - generic [ref=e143]:
+      - generic [ref=e144]:
+        - heading "Why Choose Talent Promo?" [level=2] [ref=e145]
+        - paragraph [ref=e146]: Stop sending generic resumes that get lost in the pile. Our AI ensures your resume speaks directly to each job's requirements.
+        - generic [ref=e147]:
+          - generic [ref=e148]:
+            - img [ref=e150]
+            - generic [ref=e152]:
+              - heading "ATS-Optimized" [level=3] [ref=e153]
+              - paragraph [ref=e154]: Beat applicant tracking systems with keyword-optimized formatting
+          - generic [ref=e155]:
+            - img [ref=e157]
+            - generic [ref=e159]:
+              - heading "Tailored Content" [level=3] [ref=e160]
+              - paragraph [ref=e161]: Every resume is customized for your specific target job
+          - generic [ref=e162]:
+            - img [ref=e164]
+            - generic [ref=e166]:
+              - heading "Multiple Formats" [level=3] [ref=e167]
+              - paragraph [ref=e168]: Download as PDF, Word, or plain text instantly
+      - generic [ref=e190]: "ATS Score: 95%"
+    - contentinfo [ref=e191]:
+      - generic [ref=e193]:
+        - generic [ref=e194]:
+          - img [ref=e196]
+          - generic [ref=e198]: Talent Promo
+        - generic [ref=e199]:
+          - button "How It Works" [ref=e200] [cursor=pointer]
+          - generic [ref=e201]: Demo by Vicki · Data stays in your browser
+  - button "Open Next.js Dev Tools" [ref=e207] [cursor=pointer]:
+    - img [ref=e208]
+  - alert [ref=e211]
 ```

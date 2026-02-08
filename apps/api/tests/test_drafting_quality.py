@@ -69,7 +69,7 @@ class TestBulletWordCount:
     """validate_resume() catches bullets > 15 words."""
 
     def test_short_bullets_pass(self):
-        """Bullets under 15 words should pass word count check."""
+        """Bullets under 22 words should pass word count check."""
         html = _make_resume_html(bullets=[
             "Built backend API serving 10K users",
             "Reduced latency 40% via caching",
@@ -79,32 +79,32 @@ class TestBulletWordCount:
         assert result.checks["bullet_word_count"] is True
 
     def test_long_bullet_fails(self):
-        """A bullet over 15 words should fail word count check."""
-        long_bullet = "Led the complete migration of our legacy monolithic application to a modern microservices architecture using Kubernetes and Docker containers"
+        """A bullet over 22 words should fail word count check (as warning)."""
+        long_bullet = " ".join(["word"] * 23)
         html = _make_resume_html(bullets=[long_bullet])
         result = validate_resume(html)
         assert result.checks["bullet_word_count"] is False
-        assert any("exceed 15 words" in e for e in result.errors)
+        assert any("exceed 22 words" in w for w in result.warnings)
 
-    def test_exactly_15_words_passes(self):
-        """A bullet with exactly 15 words should pass."""
-        bullet_15 = " ".join(["word"] * 15)
-        html = _make_resume_html(bullets=[bullet_15])
+    def test_exactly_22_words_passes(self):
+        """A bullet with exactly 22 words should pass."""
+        bullet_22 = " ".join(["word"] * 22)
+        html = _make_resume_html(bullets=[bullet_22])
         result = validate_resume(html)
         assert result.checks["bullet_word_count"] is True
 
-    def test_16_words_fails(self):
-        """A bullet with 16 words should fail."""
-        bullet_16 = " ".join(["word"] * 16)
-        html = _make_resume_html(bullets=[bullet_16])
+    def test_23_words_fails(self):
+        """A bullet with 23 words should fail."""
+        bullet_23 = " ".join(["word"] * 23)
+        html = _make_resume_html(bullets=[bullet_23])
         result = validate_resume(html)
         assert result.checks["bullet_word_count"] is False
 
     def test_mixed_bullets_fails_if_any_long(self):
-        """If any bullet exceeds 15 words, the check fails."""
+        """If any bullet exceeds 22 words, the check fails."""
         html = _make_resume_html(bullets=[
             "Built API",
-            "Led the complete migration of our legacy monolithic application to a modern microservices architecture using Kubernetes and Docker containers",
+            " ".join(["word"] * 25),
             "Shipped feature fast",
         ])
         result = validate_resume(html)

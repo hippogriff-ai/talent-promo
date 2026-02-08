@@ -25,29 +25,6 @@ interface ProgressMessage {
   detail: string;
 }
 
-/**
- * Truncate text at word boundary to avoid cutting mid-word.
- * Tries to break at sentence end if possible within limit.
- */
-function truncateAtWord(text: string, maxLength: number): string {
-  if (!text || text.length <= maxLength) return text;
-
-  // Try to find a sentence boundary within the limit
-  const sentenceEnd = text.slice(0, maxLength).lastIndexOf('. ');
-  if (sentenceEnd > maxLength * 0.6) {
-    return text.slice(0, sentenceEnd + 1);
-  }
-
-  // Fall back to word boundary
-  const lastSpace = text.slice(0, maxLength).lastIndexOf(' ');
-  if (lastSpace > maxLength * 0.7) {
-    return text.slice(0, lastSpace) + '...';
-  }
-
-  // Last resort: just cut at max length
-  return text.slice(0, maxLength) + '...';
-}
-
 interface ResearchStepProps {
   currentStep: WorkflowStep;
   userProfile: UserProfile | null;
@@ -58,10 +35,6 @@ interface ResearchStepProps {
   research: ResearchFindings | null;
   gapAnalysis: GapAnalysis | null;
   progressMessages?: ProgressMessage[];
-  onUpdateProfile?: (profile: UserProfile) => void;
-  onUpdateJob?: (job: JobPosting) => void;
-  onUpdateProfileMarkdown?: (markdown: string) => void;
-  onUpdateJobMarkdown?: (markdown: string) => void;
 }
 
 // Full research view for modal
@@ -569,10 +542,6 @@ export default function ResearchStep({
   research,
   gapAnalysis,
   progressMessages = [],
-  onUpdateProfile,
-  onUpdateJob,
-  onUpdateProfileMarkdown,
-  onUpdateJobMarkdown,
 }: ResearchStepProps) {
   // Modal state
   const [researchModalOpen, setResearchModalOpen] = useState(false);
@@ -921,8 +890,7 @@ export default function ResearchStep({
         onClose={() => setProfileMarkdownModalOpen(false)}
         title="Your LinkedIn Profile"
         markdown={profileMarkdown}
-        onSave={(updatedMarkdown) => {
-          onUpdateProfileMarkdown?.(updatedMarkdown);
+        onSave={() => {
           setProfileMarkdownModalOpen(false);
         }}
       />
@@ -931,8 +899,7 @@ export default function ResearchStep({
         onClose={() => setJobMarkdownModalOpen(false)}
         title="Job Posting"
         markdown={jobMarkdown}
-        onSave={(updatedMarkdown) => {
-          onUpdateJobMarkdown?.(updatedMarkdown);
+        onSave={() => {
           setJobMarkdownModalOpen(false);
         }}
       />

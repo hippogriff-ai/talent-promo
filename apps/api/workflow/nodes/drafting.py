@@ -7,10 +7,26 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from anthropic import Anthropic
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import get_settings
+
+
+def get_anthropic_client() -> Anthropic:
+    """Get configured Anthropic client for direct API access (with prompt caching).
+
+    Wrapped with LangSmith tracing when available so all messages.create
+    calls show up with full input/output in LangSmith.
+    """
+    settings = get_settings()
+    client = Anthropic(api_key=settings.anthropic_api_key)
+    try:
+        from langsmith.wrappers import wrap_anthropic
+        return wrap_anthropic(client)
+    except ImportError:
+        return client
 from workflow.state import (
     ResumeState,
     DraftingSuggestion,
@@ -18,6 +34,14 @@ from workflow.state import (
     DraftValidationResult,
 )
 from guardrails import validate_output
+
+try:
+    from langsmith import traceable
+except ImportError:
+    def traceable(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator if not args or callable(args[0]) else decorator
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +107,7 @@ CORE PRINCIPLES (in priority order):
    - GOOD: "Cut deploy time 75% via microservices migration" (8 words, 1 idea)
    - GOOD: "Mentored 3 junior engineers to production readiness" (7 words, 1 idea)
    - Professional summary: 2-3 sentences, under 40 words total
+   - Clear: Explain acronym before using it: "Subject Matter Expert (SME)"
 
 3. HIERARCHY-PRESERVING — respect the candidate's story
    - Keep their most prominent experience most prominent
@@ -132,7 +157,7 @@ CORE PRINCIPLES (in priority order):
    - Vary bullet rhythm: mix short punchy bullets (5-7 words) with longer ones (12-15 words).
      If 3+ consecutive bullets have the same word count, rewrite one shorter or longer.
 
-AUTHENTICITY MARKERS — include these when the source material supports them:
+AUTHENTICITY MARKERS — include these ONLY WHEN the source material supports them:
 - Before/after context for metrics: "from 3.2s to 0.8s" not just "reduced 75%"
 - Constraints and trade-offs: "despite legacy codebase", "within 3-month deadline"
   (Only include if the source mentions them — NEVER invent constraints)
@@ -173,13 +198,13 @@ OUTPUT FORMAT (HTML for Tiptap editor):
 <p>[2-3 sentences, under 40 words. Formula: "[Role] with [N] years [THEIR actual core expertise — NOT the target job's domain]. [Best metric achievement]. [What they bring to THIS role]."
 CRITICAL: [N] years must match their ACTUAL years in that specific domain, not total career years.
 BAD: "8+ years building AI-powered products" when source shows 8yr SWE + 1yr AI.
-GOOD: "Full-stack engineer with 8 years of software development. Shipped AI assistant from POC to production in one week."
+GOOD: "Full-stack engineer with 8 years of software development with 1 year focusing on AI products."
 Be specific, not generic.]</p>
 
 <h2>Experience</h2>
 <h3>[Job Title] | [Company] | [Dates]</h3>
 <ul>
-<li>[Under 15 words. XYZ: Accomplished X, measured by Y, by doing Z]</li>
+<li>[Under 20 words. START WITH WHY/IMACT- XYZ: i.e. Accomplished X, measured by Y, by doing Z.]</li>
 <li>[3-5 bullets per role. Most recent role gets most detail.]</li>
 </ul>
 
@@ -205,37 +230,22 @@ BEFORE OUTPUTTING, verify each:
 8. HUMAN VOICE: No AI-tell words. No filler. No em dashes. Varied rhythm. Varied bullet openings (no 3+ starting with same verb). 3-5 bullets per role. Include before/after context and constraints where the source supports them.
 9. SENIORITY: Language matches candidate's level. Entry-level doesn't say "led cross-functional strategy."
 
-Output clean HTML only. No markdown. No code fences."""
+Output clean HTML only. No markdown. No code fences. No acronyms without explanation first"""
 
 
-SUGGESTION_GENERATION_PROMPT = """You are an expert resume consultant. 53% of hiring managers distrust AI-generated resumes.
+EDITOR_CHAT_SYSTEM_PROMPT = """You are a resume editor. The user has highlighted a SPECIFIC piece of text and wants you to modify ONLY that text.
 
-Review this resume draft and generate 3-5 specific improvements. Prioritize:
-1. Adding before/after context to metrics ("reduced from 3.2s to 0.8s" beats "reduced 75%")
-2. Replacing AI-tell words (leverage, spearhead, orchestrate, etc.) with plain verbs
-3. Splitting compound bullets (>15 words or two ideas joined by "and"/"while")
-4. Adding specificity: named technologies, team sizes, user counts, constraints
-5. Fixing seniority mismatch (entry-level using "led cross-functional strategy")
+RULES:
+1. Output ONLY the replacement for the highlighted text. Nothing else.
+2. Do NOT expand scope. If they selected one bullet, return one bullet. If they selected a phrase, return a phrase.
+3. Plain text only. No HTML tags, no markdown, no headings, no section labels.
+4. No preamble, no explanation, no "Here's the updated version".
+5. Stay faithful to the source material. Do not invent metrics or exaggerate scope.
+6. Keep the same approximate length unless the user asks to expand or shorten.
+7. Use plain strong verbs (Built, Led, Cut, Grew, Shipped). Avoid AI-tells (spearheaded, leveraged, orchestrated).
 
-NEVER suggest changes that fabricate metrics or merge experience scopes.
+If the user asks a question rather than requesting an edit, answer briefly then provide the replacement text on a new line."""
 
-For each suggestion, provide:
-- The exact text to change (original_text)
-- Your improved version (proposed_text) — must be under 15 words for bullets
-- Why this is better (rationale)
-- Where in the resume (location): "summary", "experience.0", "skills", etc.
-
-OUTPUT FORMAT (JSON array):
-[
-  {
-    "location": "summary",
-    "original_text": "the exact text from the resume",
-    "proposed_text": "your improved version",
-    "rationale": "why this is better"
-  }
-]
-
-Only output the JSON array, no other text."""
 
 
 # Action verb list for validation
@@ -354,9 +364,6 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
             created_at=datetime.now().isoformat(),
         )
 
-        # Generate improvement suggestions
-        suggestions = await _generate_suggestions(resume_html, job_posting, gap_analysis)
-
         # Also create structured data for potential JSON editing
         resume_structured = {
             "name": profile_name,
@@ -376,7 +383,7 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
         return {
             "resume_html": resume_html,
             "resume_draft": resume_structured,
-            "draft_suggestions": [s.model_dump() for s in suggestions],
+            "draft_suggestions": [],
             "draft_versions": [initial_version.model_dump()],
             "draft_change_log": [],
             "draft_current_version": "1.0",
@@ -393,6 +400,71 @@ async def draft_resume_node(state: ResumeState) -> dict[str, Any]:
             "errors": [*state.get("errors", []), f"Resume drafting error: {str(e)}"],
             "current_step": "error",
         }
+
+
+def _format_research_intelligence(research: dict) -> str:
+    """Format research hiring intelligence for drafting context."""
+    if not research:
+        return ""
+
+    sections = []
+
+    # Hiring criteria — must-haves and preferred qualifications
+    hiring_criteria = research.get("hiring_criteria", {})
+    if hiring_criteria:
+        must_haves = hiring_criteria.get("must_haves", [])
+        preferred = hiring_criteria.get("preferred", [])
+        ats_keywords = hiring_criteria.get("ats_keywords", [])
+        if must_haves or preferred:
+            lines = ["HIRING CRITERIA (from research):"]
+            if must_haves:
+                lines.append("Must-haves:")
+                lines.extend(f"  - {r}" for r in must_haves[:8])
+            if preferred:
+                lines.append("Preferred:")
+                lines.extend(f"  - {r}" for r in preferred[:6])
+            if ats_keywords:
+                lines.append(f"ATS Keywords: {', '.join(ats_keywords[:20])}")
+            sections.append("\n".join(lines))
+
+    # Ideal profile — what the perfect candidate looks like
+    ideal_profile = research.get("ideal_profile", {})
+    if ideal_profile:
+        lines = ["IDEAL CANDIDATE PROFILE (from research):"]
+        if ideal_profile.get("headline"):
+            lines.append(f"Target headline: {ideal_profile['headline']}")
+        for key, label in [
+            ("summary_focus", "Summary should emphasize"),
+            ("experience_emphasis", "Experience to highlight"),
+            ("skills_priority", "Skills in priority order"),
+            ("differentiators", "Key differentiators"),
+        ]:
+            items = ideal_profile.get(key, [])
+            if items:
+                lines.append(f"{label}:")
+                lines.extend(f"  - {item}" for item in items[:6])
+        sections.append("\n".join(lines))
+
+    # Hiring patterns — what the company looks for in interviews
+    hiring_patterns = research.get("hiring_patterns", "")
+    if hiring_patterns:
+        sections.append(f"HIRING PATTERNS:\n{hiring_patterns[:600]}")
+
+    # Tech stack details — what technologies matter most
+    tech_stack = research.get("tech_stack_details", [])
+    if tech_stack:
+        high_importance = [t for t in tech_stack if t.get("importance") in ("high", "critical")]
+        if high_importance:
+            lines = ["KEY TECHNOLOGIES (high importance for this role):"]
+            for t in high_importance[:8]:
+                usage = t.get("usage", "")
+                lines.append(f"  - {t.get('technology', '')}: {usage}")
+            sections.append("\n".join(lines))
+
+    if not sections:
+        return ""
+
+    return "\n\n---\n\n".join(sections)
 
 
 def _build_drafting_context_from_raw(
@@ -424,7 +496,7 @@ def _build_drafting_context_from_raw(
     linkedin = user_profile.get('linkedin_url', '')
 
     # Use raw text for profile and job - LLMs work better with natural text
-    profile_section = profile_text[:6000] if profile_text else _format_experience_for_draft(user_profile.get('experience', []))
+    profile_section = profile_text[:12000] if profile_text else _format_experience_for_draft(user_profile.get('experience', []))
     job_section = job_text[:4000] if job_text else job_posting.get('description', '')[:2000]
 
     context = f"""
@@ -493,67 +565,11 @@ Values: {', '.join(research.get('company_values', [])) if research else 'N/A'}
 
 ---
 
+{_format_research_intelligence(research)}
+
 {prefs_section}
 """
     return context
-
-
-async def _generate_suggestions(
-    resume_html: str,
-    job_posting: dict,
-    gap_analysis: dict,
-) -> list[DraftingSuggestion]:
-    """Generate improvement suggestions for the resume draft."""
-    try:
-        llm = get_llm(temperature=0.3)
-
-        prompt = f"""
-RESUME DRAFT:
-{resume_html}
-
----
-
-TARGET JOB:
-Title: {job_posting.get('title', '')}
-Company: {job_posting.get('company_name', '')}
-
-Key Requirements:
-{chr(10).join('- ' + r for r in job_posting.get('requirements', [])[:10])}
-
-Keywords that should be included:
-{', '.join(gap_analysis.get('keywords_to_include', [])[:15])}
-
-Generate 3-5 specific, actionable suggestions to improve this resume for the target job.
-"""
-
-        messages = [
-            SystemMessage(content=SUGGESTION_GENERATION_PROMPT),
-            HumanMessage(content=prompt),
-        ]
-
-        response = await llm.ainvoke(messages)
-        content = _extract_content_from_code_block(response.content.strip(), "json")
-        suggestions_data = json.loads(content)
-
-        suggestions = []
-        for idx, s in enumerate(suggestions_data[:5]):  # Max 5 suggestions
-            suggestion = DraftingSuggestion(
-                id=f"sug_{uuid.uuid4().hex[:8]}",
-                location=s.get("location", "general"),
-                original_text=s.get("original_text", ""),
-                proposed_text=s.get("proposed_text", ""),
-                rationale=s.get("rationale", ""),
-                status="pending",
-                created_at=datetime.now().isoformat(),
-            )
-            suggestions.append(suggestion)
-
-        logger.info(f"Generated {len(suggestions)} suggestions")
-        return suggestions
-
-    except Exception as e:
-        logger.error(f"Failed to generate suggestions: {e}")
-        return []
 
 
 # AI-tell words and phrases that signal AI-generated content
@@ -1024,7 +1040,7 @@ def validate_resume(html_content: str, source_text: str = "", job_text: str = ""
             quantified_bullets += 1
 
         # Bullet word count check (skip certification-style bullets)
-        if len(words) > 15:
+        if len(words) > 22:
             long_bullets.append(clean_bullet)
 
         # Compound bullet check
@@ -1044,7 +1060,7 @@ def validate_resume(html_content: str, source_text: str = "", job_text: str = ""
     # Bullet word count validation
     checks["bullet_word_count"] = len(long_bullets) == 0
     if long_bullets:
-        errors.append(f"{len(long_bullets)} bullet(s) exceed 15 words")
+        warnings.append(f"{len(long_bullets)} bullet(s) exceed 22 words")
         for b in long_bullets[:3]:
             warnings.append(f"Long bullet ({len(b.split())}w): {b[:80]}...")
 
@@ -1366,3 +1382,119 @@ def create_version(
         change_log=change_log or [],
         created_at=datetime.now().isoformat(),
     )
+
+
+@traceable(name="drafting_chat", run_type="chain")
+async def drafting_chat(
+    state: dict,
+    selected_text: str,
+    user_message: str,
+    chat_history: list[dict],
+) -> dict:
+    """Chat with drafting agent about selected text.
+
+    Reuses RESUME_DRAFTING_PROMPT and _build_drafting_context_from_raw().
+    Uses Anthropic prompt caching for efficiency.
+    Uses synced state["resume_html"] (updated via /editor/sync on apply).
+
+    Args:
+        state: Current workflow state (from synced backend)
+        selected_text: The text the user has selected in the editor
+        user_message: The user's request/question about the selected text
+        chat_history: Previous messages in this chat session
+
+    Returns:
+        dict with success, suggestion, original, and cache_hit fields
+    """
+    client = get_anthropic_client()
+    settings = get_settings()
+
+    # Build same context as initial draft generation
+    full_context = _build_drafting_context_from_raw(
+        profile_text=state.get("profile_text", ""),
+        job_text=state.get("job_text", ""),
+        profile_name=state.get("profile_name", ""),
+        job_title=state.get("job_title", ""),
+        job_company=state.get("job_company", ""),
+        user_profile=state.get("user_profile", {}),
+        job_posting=state.get("job_posting", {}),
+        gap_analysis=state.get("gap_analysis", {}),
+        qa_history=state.get("qa_history", []),
+        research=state.get("research", {}),
+        discovered_experiences=state.get("discovered_experiences", []),
+        user_preferences=state.get("user_preferences"),
+    )
+
+    # Current resume from synced state (updated on apply via /editor/sync)
+    current_resume = state.get("resume_html", "")
+
+    # Build messages with cache control for efficiency
+    # The context + resume are cached, chat history + current request are not
+    messages = [
+        # CACHED: Full context + current resume (synced on apply)
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"## CONTEXT\n{full_context}\n\n## CURRENT RESUME\n{current_resume}",
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+        },
+        {"role": "assistant", "content": "Context reviewed. Ready to help edit."},
+    ]
+
+    # Add chat history (NOT CACHED - grows each turn)
+    for msg in chat_history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+
+    # Add current request (NOT CACHED)
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                f'SELECTED TEXT:\n"{selected_text}"\n\n'
+                f"USER REQUEST: {user_message}"
+            ),
+        }
+    )
+
+    try:
+        response = client.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=1024,
+            system=[
+                {
+                    "type": "text",
+                    "text": EDITOR_CHAT_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=messages,
+            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+        )
+
+        # Check if we got a cache hit
+        cache_hit = getattr(response.usage, "cache_read_input_tokens", 0) > 0
+
+        suggestion_text = response.content[0].text.strip()
+        # Safety net: strip HTML tags — chat suggestions should be plain text
+        if "<" in suggestion_text:
+            suggestion_text = re.sub(r"<[^>]+>", "", suggestion_text).strip()
+
+        return {
+            "success": True,
+            "suggestion": suggestion_text,
+            "original": selected_text,
+            "cache_hit": cache_hit,
+        }
+
+    except Exception as e:
+        logger.error(f"Drafting chat error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "original": selected_text,
+            "cache_hit": False,
+        }

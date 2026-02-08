@@ -11,6 +11,14 @@ from langgraph.types import interrupt
 from config import get_settings
 from workflow.state import ResumeState
 
+try:
+    from langsmith import traceable
+except ImportError:
+    def traceable(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator if not args or callable(args[0]) else decorator
+
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
@@ -132,6 +140,7 @@ async def editor_assist_node(state: ResumeState) -> dict[str, Any]:
         }
 
 
+@traceable(name="get_editor_suggestion", run_type="chain")
 async def get_editor_suggestion(
     action: str,
     selected_text: str,
@@ -215,6 +224,7 @@ SELECTED TEXT TO MODIFY:
         }
 
 
+@traceable(name="regenerate_section", run_type="chain")
 async def regenerate_section(
     section: str,
     current_content: str,

@@ -211,6 +211,10 @@ def optimize_for_ats(html_content: str) -> str:
             # Flatten column structure
             div.unwrap()
 
+    # Strip editor artifacts (highlight marks from Tiptap)
+    for mark in soup.find_all("mark"):
+        mark.unwrap()
+
     return str(soup)
 
 

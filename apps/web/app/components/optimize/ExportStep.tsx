@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   useExportStorage,
   ExportStep as ExportStepType,
@@ -48,6 +48,8 @@ export default function ExportStep({
   const [activeTab, setActiveTab] = useState<"ats" | "linkedin">("ats");
   const [copySuccess, setCopySuccess] = useState(false);
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
+
+  const autoStarted = useRef(false);
 
   // Initialize/check for existing session
   useEffect(() => {
@@ -106,6 +108,14 @@ export default function ExportStep({
       setIsExporting(false);
     }
   }, [threadId, draftApproved, storage, onComplete]);
+
+  // Auto-start export when component mounts with approved draft
+  useEffect(() => {
+    if (draftApproved && storage.session && !storage.session.exportCompleted && !isExporting && !autoStarted.current) {
+      autoStarted.current = true;
+      startExport();
+    }
+  }, [draftApproved, storage.session, isExporting, startExport]);
 
   // Download file
   const downloadFile = useCallback(

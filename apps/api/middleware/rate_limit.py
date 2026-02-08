@@ -8,7 +8,6 @@ Also enforces a global daily limit across all users.
 import os
 import time
 from collections import defaultdict
-from datetime import datetime
 from typing import Tuple
 
 # Configuration
@@ -80,62 +79,3 @@ def check_rate_limit(client_ip: str) -> Tuple[bool, int, int]:
     reset_time = int(oldest_request + RATE_LIMIT_WINDOW - now)
 
     return False, 0, max(1, reset_time)
-
-
-def get_rate_limit_status(client_ip: str) -> dict:
-    """Get current rate limit status for an IP.
-
-    Args:
-        client_ip: The client's IP address
-
-    Returns:
-        Dict with rate limit info
-    """
-    now = time.time()
-    window_start = now - RATE_LIMIT_WINDOW
-
-    timestamps = [ts for ts in _rate_limits.get(client_ip, []) if ts > window_start]
-
-    return {
-        "ip": client_ip,
-        "requests_used": len(timestamps),
-        "requests_limit": RATE_LIMIT_REQUESTS,
-        "requests_remaining": max(0, RATE_LIMIT_REQUESTS - len(timestamps)),
-        "window_seconds": RATE_LIMIT_WINDOW,
-    }
-
-
-def reset_rate_limit(client_ip: str) -> bool:
-    """Reset rate limit for a specific IP (for admin use).
-
-    Args:
-        client_ip: The client's IP address
-
-    Returns:
-        True if reset, False if IP wasn't in rate limit storage
-    """
-    if client_ip in _rate_limits:
-        del _rate_limits[client_ip]
-        return True
-    return False
-
-
-def cleanup_old_entries() -> int:
-    """Clean up expired rate limit entries (for memory management).
-
-    Returns:
-        Number of IPs removed
-    """
-    now = time.time()
-    window_start = now - RATE_LIMIT_WINDOW
-
-    removed = 0
-    for ip in list(_rate_limits.keys()):
-        timestamps = [ts for ts in _rate_limits[ip] if ts > window_start]
-        if not timestamps:
-            del _rate_limits[ip]
-            removed += 1
-        else:
-            _rate_limits[ip] = timestamps
-
-    return removed

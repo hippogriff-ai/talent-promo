@@ -148,13 +148,28 @@ export default function OptimizePage() {
     setHasCheckedPending(true);
   }, [hasCheckedPending, workflow, workflowSession, preferences]);
 
-  // Check for existing session on mount
+  // Check for existing session on mount — validate against backend first
   useEffect(() => {
     if (!workflowSession.isLoading && workflowSession.existingSession) {
-      // Show recovery modal if there's an existing session
-      setShowRecoveryModal(true);
+      const threadId = workflowSession.existingSession.threadId;
+      // Probe backend to check if workflow still exists before showing resume modal
+      fetch(`/api/optimize/status/${threadId}`, { credentials: "include" })
+        .then(res => {
+          if (res.ok) {
+            // Backend has this workflow — safe to offer resume
+            setShowRecoveryModal(true);
+          } else {
+            // Backend lost this workflow (server restart, cleanup, TTL expiry)
+            console.warn(`Session ${threadId} not found on backend (${res.status}), clearing stale localStorage`);
+            workflowSession.clearAllSessions();
+          }
+        })
+        .catch(() => {
+          // Backend unreachable — don't show modal, user can retry later
+          console.warn("Backend unreachable, skipping session recovery");
+        });
     }
-  }, [workflowSession.isLoading, workflowSession.existingSession]);
+  }, [workflowSession.isLoading, workflowSession.existingSession, workflowSession.clearAllSessions]);
 
   // Sync session state from workflow status
   // Note: workflowSession excluded from deps intentionally — syncFromBackend depends on session,
@@ -178,8 +193,10 @@ export default function OptimizePage() {
         }
       } else {
         // Reset the flag and step override once backend has reverted from "completed"
+        // But preserve stepOverride="completed" — it was set by onApprove and the
+        // backend workflow.currentStep hasn't caught up yet.
         userRequestedEditRef.current = false;
-        if (stepOverride) setStepOverride(null);
+        if (stepOverride && stepOverride !== "completed") setStepOverride(null);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -255,20 +272,20 @@ export default function OptimizePage() {
 
   // Handle session recovery
   const handleResumeSession = async () => {
+    const threadId = workflowSession.existingSession?.threadId;
     workflowSession.resumeSession();
     setShowRecoveryModal(false);
 
-    // If session has a threadId, resume the workflow
-    if (workflowSession.existingSession?.threadId) {
+    if (threadId) {
       try {
-        await workflow.resumeWorkflow(workflowSession.existingSession.threadId);
+        await workflow.resumeWorkflow(threadId);
         console.log("Session resumed successfully");
       } catch (error) {
         console.error("Failed to resume session:", error);
-        // Show error to user
-        workflowSession.recordError(
-          error instanceof Error ? error.message : "Failed to resume session"
-        );
+        // Session is dead — clear everything and redirect to home
+        workflowSession.clearAllSessions();
+        workflow.reset();
+        router.push("/");
       }
     }
   };
@@ -1453,7 +1470,23 @@ export default function OptimizePage() {
             gapAnalysis={workflow.data.gapAnalysis}
             onSave={workflow.updateResume}
             onApprove={async () => {
-              await workflow.submitAnswer("approve");
+              // Call /drafting/approve endpoint directly instead of submitAnswer
+              // The editor already saved the content via updateResume
+              const response = await fetch(
+                `/api/optimize/${workflow.threadId}/drafting/approve`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({ approved: true }),
+                }
+              );
+              if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || "Failed to approve draft");
+              }
+              // Navigate to export step
+              setStepOverride("completed");
             }}
           />
         );

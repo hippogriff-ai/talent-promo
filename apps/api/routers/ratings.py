@@ -8,7 +8,6 @@ Endpoints:
 """
 
 import logging
-import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query
@@ -19,17 +18,11 @@ from services.ratings_service import (
     RatingSummary,
     get_ratings_service,
 )
+from routers.deps import get_anonymous_user_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ratings", tags=["ratings"])
-
-
-def get_anonymous_user_id(
-    x_anonymous_id: Optional[str] = Header(None, alias="X-Anonymous-ID")
-) -> str:
-    """Get anonymous user ID from header or generate one."""
-    return x_anonymous_id or f"anon_{uuid.uuid4().hex[:12]}"
 
 
 # ==================== Request/Response Models ====================

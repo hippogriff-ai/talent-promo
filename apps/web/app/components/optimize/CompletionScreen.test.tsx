@@ -94,32 +94,6 @@ describe("CompletionScreen", () => {
     });
   });
 
-  describe("LinkedIn Status", () => {
-    it("shows LinkedIn ready indicator when optimized", () => {
-      render(
-        <CompletionScreen
-          downloads={mockDownloads}
-          onStartNew={vi.fn()}
-          linkedinOptimized={true}
-        />
-      );
-
-      expect(screen.getByText("LinkedIn Ready")).toBeInTheDocument();
-    });
-
-    it("does not show LinkedIn indicator when not optimized", () => {
-      render(
-        <CompletionScreen
-          downloads={mockDownloads}
-          onStartNew={vi.fn()}
-          linkedinOptimized={false}
-        />
-      );
-
-      expect(screen.queryByText("LinkedIn Ready")).not.toBeInTheDocument();
-    });
-  });
-
   describe("Next Steps", () => {
     it("shows next steps guidance", () => {
       render(

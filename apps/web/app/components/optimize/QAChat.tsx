@@ -1,14 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { GapAnalysis } from "../../hooks/useWorkflow";
-
-interface QAInteraction {
-  question: string;
-  answer: string | null;
-  question_intent?: string;
-  timestamp: string;
-}
+import { GapAnalysis, QAInteraction } from "../../hooks/useWorkflow";
 
 interface QAChatProps {
   qaHistory: QAInteraction[];

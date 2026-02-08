@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 
 
 export type EditorAction =
@@ -20,6 +20,16 @@ export interface EditorSuggestion {
   error?: string;
 }
 
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface DraftingChatResult {
+  suggestion: string;
+  cacheHit: boolean;
+}
+
 export interface UseEditorAssistReturn {
   suggestion: EditorSuggestion | null;
   isLoading: boolean;
@@ -29,18 +39,28 @@ export interface UseEditorAssistReturn {
     selectedText: string,
     instructions?: string
   ) => Promise<void>;
-  requestCustomSuggestion: (
-    selectedText: string,
-    userMessage: string
-  ) => Promise<EditorSuggestion | null>;
-  regenerateSection: (section: string, currentContent: string) => Promise<string>;
   clearSuggestion: () => void;
+  // New methods for enhanced drafting chat
+  chatWithDraftingAgent: (
+    selectedText: string,
+    userMessage: string,
+    chatHistory: ChatMessage[]
+  ) => Promise<DraftingChatResult | null>;
+  syncEditor: (
+    html: string,
+    original?: string,
+    suggestion?: string,
+    userMessage?: string
+  ) => void;
 }
 
 export function useEditorAssist(threadId: string | null): UseEditorAssistReturn {
   const [suggestion, setSuggestion] = useState<EditorSuggestion | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Track pending syncs to avoid duplicate requests
+  const pendingSyncRef = useRef<AbortController | null>(null);
 
   const requestSuggestion = useCallback(
     async (action: EditorAction, selectedText: string, instructions?: string) => {
@@ -94,56 +114,19 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
     [threadId]
   );
 
-  const regenerateSection = useCallback(
-    async (section: string, currentContent: string): Promise<string> => {
-      if (!threadId) {
-        throw new Error("No active workflow");
-      }
-
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const response = await fetch(`/api/optimize/${threadId}/editor/regenerate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            section,
-            current_content: currentContent,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || "Failed to regenerate section");
-        }
-
-        const data = await response.json();
-
-        if (data.success) {
-          return data.content;
-        } else {
-          throw new Error(data.error || "Failed to regenerate section");
-        }
-      } catch (e) {
-        const message = e instanceof Error ? e.message : "Unknown error";
-        setError(message);
-        throw e;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [threadId]
-  );
-
   const clearSuggestion = useCallback(() => {
     setSuggestion(null);
     setError(null);
   }, []);
 
-  // Custom chat-style request that returns the suggestion for chat history
-  const requestCustomSuggestion = useCallback(
-    async (selectedText: string, userMessage: string): Promise<EditorSuggestion | null> => {
+  // Chat with drafting agent - uses full context with prompt caching
+  // Backend uses synced state, so no HTML in request needed
+  const chatWithDraftingAgent = useCallback(
+    async (
+      selectedText: string,
+      userMessage: string,
+      chatHistory: ChatMessage[]
+    ): Promise<DraftingChatResult | null> => {
       if (!threadId) {
         setError("No active workflow");
         return null;
@@ -158,13 +141,16 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
       setError(null);
 
       try {
-        const response = await fetch(`/api/optimize/${threadId}/editor/assist`, {
+        const response = await fetch(`/api/optimize/${threadId}/editor/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "custom",
             selected_text: selectedText,
-            instructions: userMessage,
+            user_message: userMessage,
+            chat_history: chatHistory.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
           }),
         });
 
@@ -176,14 +162,17 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
         const data = await response.json();
 
         if (data.success) {
-          const result: EditorSuggestion = {
+          // Also set as current suggestion for apply flow
+          setSuggestion({
             success: true,
             original: selectedText,
             suggestion: data.suggestion,
             action: "custom",
+          });
+          return {
+            suggestion: data.suggestion,
+            cacheHit: data.cache_hit || false,
           };
-          setSuggestion(result);
-          return result;
         } else {
           setError(data.error || "Failed to generate suggestion");
           return null;
@@ -198,13 +187,55 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
     [threadId]
   );
 
+  // Sync editor state to backend (fire and forget)
+  // Called after apply or undo to keep backend state in sync
+  // Also tracks accepted suggestions for preference learning
+  const syncEditor = useCallback(
+    (
+      html: string,
+      original?: string,
+      suggestion?: string,
+      userMessage?: string
+    ) => {
+      if (!threadId) return;
+
+      // Cancel any pending sync
+      if (pendingSyncRef.current) {
+        pendingSyncRef.current.abort();
+      }
+
+      const controller = new AbortController();
+      pendingSyncRef.current = controller;
+
+      // Fire and forget - don't await
+      fetch(`/api/optimize/${threadId}/editor/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          html,
+          original: original || "",
+          suggestion: suggestion || "",
+          user_message: userMessage || "",
+        }),
+        signal: controller.signal,
+      }).catch(() => {
+        // Ignore errors - this is best effort
+      }).finally(() => {
+        if (pendingSyncRef.current === controller) {
+          pendingSyncRef.current = null;
+        }
+      });
+    },
+    [threadId]
+  );
+
   return {
     suggestion,
     isLoading,
     error,
     requestSuggestion,
-    requestCustomSuggestion,
-    regenerateSection,
     clearSuggestion,
+    chatWithDraftingAgent,
+    syncEditor,
   };
 }

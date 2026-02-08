@@ -37,7 +37,7 @@ def get_llm():
         model=settings.anthropic_model,
         api_key=settings.anthropic_api_key,
         temperature=0.3,
-        max_tokens=4096,
+        max_tokens=8192,
     )
 
 
@@ -279,7 +279,10 @@ NEWS:
             gap_analysis = result_data.get("gap_analysis", {})
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON: {e}")
+            logger.warning(
+                f"Research JSON truncated or malformed (response length: {len(response.content)} chars). "
+                f"Falling back to empty gap analysis. Parse error: {e}"
+            )
             # Create fallback data (minimal since we use raw text now)
             research_data = {
                 "company_overview": f"Research gathered for {company_name}",

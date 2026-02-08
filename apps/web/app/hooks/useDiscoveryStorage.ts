@@ -68,13 +68,6 @@ export interface DiscoverySession {
 const STORAGE_KEY = "resume_agent:discovery_session";
 
 /**
- * Create a session key from thread ID.
- */
-function createSessionKey(threadId: string): string {
-  return threadId;
-}
-
-/**
  * Hook for managing discovery session persistence in localStorage.
  *
  * Features:

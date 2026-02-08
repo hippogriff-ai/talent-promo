@@ -1,9 +1,9 @@
 ---
 active: true
-iteration: 3
-max_iterations: 0
+iteration: 10
+max_iterations: 10
 completion_promise: null
-started_at: "2026-01-11T18:31:48Z"
+started_at: "2026-02-08T02:24:36Z"
 ---
 
-read the tests needs to pass in @specs/thread_cleanup.md and implement the integration of langgraph with postgres, you need to also setup the local development for langgraph, instead of using local storage, use the local postgres (or supabase if you may). each loop you should first use feature-dev to develop, then code-review, then address the comment, then simplify the code. There should be 5 places of enhancement in each loop, and you should ensure e2e tests passes
+your goal is to remove dead code and simplify code and find bugs and fix it. Bug should cover from UI to backend, each loop you should find something to do, atleast 1 bug or 1 place of simplification or 1 dead code removed. . cannot stop until you finish 10 loops

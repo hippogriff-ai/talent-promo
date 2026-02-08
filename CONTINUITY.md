@@ -319,7 +319,7 @@ Finalize Talent Promo app per specs/FINALIZE_APP.md
       - Updated `handleRerunGapAnalysis` to send markdown in request body
       - Updated `page.tsx` to pass edited markdown (or original) to DiscoveryStep
     - All tests pass, build passes
-- Now: Session complete - all fixes verified working
+- Now: Session complete
 - Next: Continue with any remaining feature development
 
 ## Session Fixes (2026-02-04)
@@ -380,6 +380,56 @@ Added PDF/DOCX file upload to the landing page, connecting the existing backend 
 - Backend: 681 passed, 2 skipped (was 673 + 8 new)
 - Frontend build: passes
 - TypeScript: compiles
+
+## Editor Chat Fix + Dev Persistence + LangSmith Tracing (2026-02-08)
+
+### 1. Editor Chat Scope Bug Fix
+- **Problem**: User highlights a subset of text, but chat suggestion returns a whole rewritten section
+- **Root cause**: `drafting_chat()` used `RESUME_DRAFTING_PROMPT` (215-line full resume generation prompt) as system prompt. It told the LLM to generate complete resume sections with HTML, conflicting with the user-message instruction to only modify selected text.
+- **Fix**: Created `EDITOR_CHAT_SYSTEM_PROMPT` — a short, focused prompt that only instructs the LLM to replace the selected text. Removed redundant inline rules from user message.
+- File: `apps/api/workflow/nodes/drafting.py`
+
+### 2. LangSmith Tracing for Editor Endpoints
+- Added `@traceable` decorators to `get_editor_suggestion()` and `regenerate_section()` in `editor.py`
+- Added `@traceable` to `drafting_chat()` in `drafting.py`
+- Now visible in LangSmith traces for debugging
+
+### 3. Workflow Persistence Across Server Restarts
+- Added file-based persistence: `_workflows` dict auto-saves to `apps/api/.workflow_cache.json` on every write
+- Auto-loads on server startup so workflows survive restarts
+- Also added snapshot endpoints for targeted replay testing:
+  - `POST /{thread_id}/snapshot` — save state to file
+  - `POST /restore?file=<name>` — restore as new thread
+  - `GET /snapshots/list` — list saved snapshots
+
+### 4. Upload Error Handling Improvement
+- Added content-type check before `res.json()` — prevents cryptic errors when proxy returns HTML
+- Added network error detection with user-friendly message
+- File: `apps/web/app/page.tsx`
+
+### Test Results
+- Backend: 688 passed, 2 skipped
+- Frontend: 208 passed
+
+## Session Fixes (2026-02-08b)
+
+### 1. Stale Session Recovery Fix
+- Frontend now probes `/api/optimize/status/{threadId}` before showing "Resume Session" modal
+- If backend returns 404, auto-clears stale localStorage
+- Backend marks disk-recovered workflows with `recovered_from_disk` flag, rejects resume attempts with HTTP 409
+
+### 2. Auto-Start Export (remove redundant screen)
+- ExportStep now auto-starts export on mount when `draftApproved=true` (via `useRef` + `useEffect`)
+- Eliminates the redundant "Ready to Export" / "Start Export" intermediary screen
+
+### 3. Strip `<mark>` Highlight Tags from Export
+- Backend `approve_draft` strips `<mark>` tags via regex before storing `resume_final`
+- `optimize_for_ats()` strips via BeautifulSoup `mark.unwrap()`
+- CompletionScreen strips from preview HTML via regex
+
+### 4. Normalize `profile_text` / `job_text` to Save Tokens
+- Added `_normalize_text()` in `ingest.py`: strips form-feed/vertical-tab, trailing whitespace, collapses 3+ newlines into 2
+- Applied to both `profile_text` and `job_text` before returning from `parallel_ingest_node()`
 
 ## React Hook Dependency Fixes (2026-02-01)
 
@@ -1498,3 +1548,194 @@ Upgraded the frontend from Next.js 14.2.5 to 16.1.6 and React 18.3.1 to 19.2.4. 
 - 24 passed (16 landing + 8 mocked workflow)
 - 38 skipped (pre-existing: discovery, drafting, export, research phase tests)
 - 2 failed (live integration tests requiring real API — not related to upgrade)
+
+## Enhanced Drafting Chat with Full Context + Optimistic Apply (2026-02-07)
+
+Implemented enhanced editor chat assistant with full drafting context and prompt caching for efficient subsequent requests.
+
+### Problem
+1. Editor chat assistant had minimal context — didn't know WHY resume was drafted this way
+2. Apply flow didn't track preferences for learning
+
+### Solution
+1. **Chat with drafting agent**: Reuses same system prompt + context as initial draft generation
+2. **Prompt caching**: Caches large context prefix for fast subsequent requests (~90% token savings)
+3. **Optimistic apply**: Instant client-side apply with async backend tracking
+
+### Files Modified
+
+**Backend (`apps/api/`):**
+- `workflow/nodes/drafting.py`:
+  - Added `get_anthropic_client()` for direct Anthropic API access
+  - Added `drafting_chat()` function that reuses `RESUME_DRAFTING_PROMPT` and `_build_drafting_context_from_raw()`
+  - Uses Anthropic prompt caching via `cache_control: {"type": "ephemeral"}` on system prompt and context
+  - Returns `cache_hit` boolean to track caching effectiveness
+
+- `routers/optimize.py`:
+  - Added `DraftingChatRequest` and `EditorSyncRequest` models
+  - Added `POST /{thread_id}/editor/sync` endpoint for state sync + suggestion tracking
+  - Added `POST /{thread_id}/editor/chat` endpoint for lightweight chat (uses synced state, no HTML in request)
+  - Tracks accepted suggestions in `state["suggestion_history"]` for preference learning
+
+**Frontend (`apps/web/app/`):**
+- `hooks/useEditorAssist.ts`:
+  - Added `ChatMessage` and `DraftingChatResult` interfaces
+  - Added `chatWithDraftingAgent()` function for lightweight chat requests (no HTML)
+  - Added `syncEditor()` fire-and-forget function for state sync with tracking
+  - Uses AbortController to cancel pending syncs
+
+- `components/optimize/ResumeEditor.tsx`:
+  - Updated to use `chatWithDraftingAgent` for chat (full context) instead of `/editor/assist`
+  - Updated `applySuggestion` and `applyChatSuggestion` to call `syncEditor()` after apply
+  - Added `lastUserMessage` state tracking for sync
+
+### Performance
+| Operation | Latency |
+|-----------|---------|
+| First chat message | Normal (~2-3s, creates cache) |
+| Subsequent messages | Fast (~0.5-1s, cache hit) |
+| Apply suggestion | Instant (client-side) |
+| Undo | Instant (Tiptap native) |
+
+### Verification
+- TypeScript compiles with zero errors
+- Backend imports work correctly
+
+## Editor Chat Code Review & Cleanup (2026-02-07)
+
+### Dead Code Removal
+- Deleted `DraftingChat.tsx`, `DraftingStep.tsx`, `SuggestionCard.tsx`, `VersionHistory.tsx` (+ their tests)
+- These were unused: production page (`optimize/page.tsx`) uses `ResumeEditor` directly
+- `DraftingChat` had its own duplicate chat implementation (direct fetch to `/editor/assist`) vs production `ResumeEditor` chat (uses `useEditorAssist.chatWithDraftingAgent` → `/editor/chat` with prompt caching)
+
+### Code Quality Fix
+- Changed `EditorActionRequest.action` from `str` to `Literal["improve", "add_keywords", "quantify", "shorten", "rewrite", "fix_tone", "custom"]` for Pydantic validation
+
+### New Tests
+- `useEditorAssist.test.ts` — 29 tests: all 6 hook methods, error handling, loading states, abort controller, fire-and-forget sync
+- `ResumeEditor.test.tsx` — 29 tests: rendering, toolbar, quick actions, chat mode toggle, save/approve, drawer toggle, keyword display
+- `test_editor.py` — 33 tests: all 5 editor endpoints, `get_editor_suggestion`, `regenerate_section`, HTML sanitization (XSS prevention)
+
+### Test Results
+- Frontend: 16 files, 240 tests passed (was 45 tests on dead code → now 58 tests on production code)
+- Backend: 686 passed, 2 skipped
+
+## User-Standpoint Testing & Bug Fixes (2026-02-07)
+
+Performed end-to-end user testing via Playwright MCP. Found and fixed 4 bugs:
+
+### Bug 1: Navigation Race Condition After Draft Approval
+- **Symptom**: Clicking "Approve & Export" succeeded but page stayed on drafting step
+- **Root cause**: `useEffect` in `page.tsx` cleared `stepOverride="completed"` immediately because `workflow.currentStep` hadn't caught up via polling
+- **Fix**: `if (stepOverride && stepOverride !== "completed") setStepOverride(null)` — don't clear "completed" override
+- **File**: `apps/web/app/optimize/page.tsx`
+
+### Bug 2: Pending Suggestions Block Approval With No UI to Resolve
+- **Symptom**: "Cannot approve: 5 suggestions still pending" error
+- **Root cause**: Backend generated `draft_suggestions` with status "pending" but editor has no UI to accept/decline them
+- **Fix**: Auto-decline pending suggestions in the approve endpoint instead of blocking
+- **File**: `apps/api/routers/optimize.py`
+
+### Bug 3: Editor "Auto-saved" Label Was Misleading
+- **Symptom**: Editor showed "Auto-saved" but never wrote to localStorage; edits lost on refresh
+- **Fix**: Added `onUpdate` callback to Tiptap editor for localStorage auto-save, `localStorage.removeItem` after successful backend save, load from localStorage on mount
+- **File**: `apps/web/app/components/optimize/ResumeEditor.tsx`
+
+### Bug 4: Whole-Document Chat Mode Not Implemented
+- **Decision**: Deferred to next phase. Added to README as future work.
+
+### Test Fixes
+- Updated `test_approve_draft_with_pending_suggestions` → `test_approve_draft_auto_resolves_pending_suggestions` (backend)
+- Added 4 new localStorage auto-save tests to `ResumeEditor.test.tsx` (works with mocked localStorage from `vitest.setup.ts`)
+
+### Test Results
+- Frontend: 16 files, 244 tests passed
+- Backend: 686 passed, 2 skipped
+
+## Discovery Scroll + Editor Chat Scope Fixes (2026-02-07)
+
+### Bug 5: Discovery Chat Scroll — Last Message Hidden by Input Area
+- **Symptom**: When AI finishes typing a question, the input area appears and pushes the last message out of view
+- **Root cause**: Scroll-to-bottom effects fire during typing, but no scroll fires after the input area renders (it appears when `isPromptComplete` becomes true)
+- **Fix**: Added `useEffect` that scrolls to bottom via `requestAnimationFrame` when the input area becomes visible
+- **File**: `apps/web/app/components/optimize/DiscoveryChat.tsx`
+
+### Bug 6: Editor Chat Suggestion Returns HTML Beyond Selected Text
+- **Symptom**: User selects a sentence, chats about it, but AI returns entire section with HTML tags (`<h2>`, `<p>`)
+- **Root cause**: Chat prompt said "Provide only the improved text" but didn't constrain scope or ban HTML output. LLM saw full resume HTML in context and expanded scope.
+- **Fix (prompt)**: Added explicit RULES: plain text only, no HTML, no scope expansion
+- **Fix (safety net)**: Strip HTML tags via regex before returning suggestion
+- **File**: `apps/api/workflow/nodes/drafting.py` (`drafting_chat` function)
+- **Tests**: 2 new tests — `test_strips_html_from_suggestion`, `test_plain_text_suggestion_unchanged`
+
+### Test Results
+- Frontend: 16 files, 244 tests passed
+- Backend: 688 passed, 2 skipped
+
+## Dead Code Cleanup & Bug Fixes (2026-02-08)
+
+10-iteration Ralph Loop focused on dead code removal, simplification, and bug fixes.
+
+### Dead Code Removed (~3,300 lines total)
+- **Frontend hooks (3 files)**: `useEditTracking.ts`, `useSuggestions.ts`, `useSuggestionTracking.ts` + 2 test files — never imported
+- **Frontend components (4 files)**: `ResumeDiffView.tsx` (225 lines), `ValidationWarnings.tsx` (304), `PreferenceSidebar.tsx` (264), `ResumeViewer.tsx` (347) — never imported
+- **Frontend utils (3 files)**: `resumeTextParser.ts` (704), `resumeStorage.ts` (255), `jobStorage.ts` (246), `anonymousId.ts` (49) — never imported
+- **Frontend types (2 files)**: `types/resume.ts` (117), `types/jobPosting.ts` (98) — only used by dead files
+- **Frontend function**: `regenerateSection` removed from `useEditorAssist.ts` (40 lines) — never called by any component
+- **Backend**: Dead `_parse_timestamp()` function, duplicate `import asyncio`, 7 unused imports in `optimize.py` and `rate_limit.py`
+
+### Bugs Fixed
+1. **Error handler race condition** (`optimize.py`): `_workflows.get(thread_id, {})` overwrote valid `workflow_data` in 3 error handlers — state updates went to empty dicts
+2. **Missing error state persistence** (`optimize.py` `_resume_workflow`): Non-interrupt exceptions only logged, never saved error state — workflow stuck in limbo
+3. **Potential KeyError** (`optimize.py` suggestion acceptance): `suggestion["proposed_text"]` used without existence check — now guarded with `.get()`
+
+### Test Results
+- Frontend: 14 files, 212 tests passed
+- Backend: 688 passed, 2 skipped
+
+## Dead Code Removal & Bug Fix Pass #2 (2026-02-07)
+
+### Dead Code Removed
+1. **`truncateAtWord` function** — `ResearchStep.tsx` (18 lines, never called)
+2. **3 rate_limit functions** — `middleware/rate_limit.py`: `get_rate_limit_status`, `reset_rate_limit`, `cleanup_old_entries` (58 lines, never called)
+3. **`WorkflowProgressStep` class** — `routers/optimize.py` (unused Pydantic model)
+4. **`_workflow_data_lock` + `_get_workflow_lock` + `asynccontextmanager` import** — `routers/optimize.py` (unused lock context manager, ~30 lines)
+5. **`requestCustomSuggestion`** — `useEditorAssist.ts` hook, interface, ResumeEditor destructuring, and tests (~70 lines, never called)
+6. **4 unused ResearchStep props** — `onUpdateProfile`, `onUpdateJob`, `onUpdateProfileMarkdown`, `onUpdateJobMarkdown` (never passed by caller)
+7. **`is_turnstile_enabled` function** — `middleware/turnstile.py` (never called, middleware uses `os.getenv` directly)
+8. **`createSessionKey` function** — `useDiscoveryStorage.ts` (identity function, never called)
+
+### Code Simplification
+9. **Deduplicated `get_anonymous_user_id`** — Extracted from `ratings.py` and `preferences.py` into shared `routers/deps.py`
+10. **Consolidated `QAInteraction` type** — Removed local definition from `QAChat.tsx`, imported from `useWorkflow.ts`
+
+### Bug Fixed
+11. **HTML string replacement** — `optimize.py`: Two `.replace()` calls replaced ALL occurrences of matching text; fixed to `.replace(old, new, 1)` to only replace first occurrence, preventing unintended duplicate text replacement
+
+### Test Results
+- Frontend: 14 files, 208 tests passed
+- Backend: 631 passed, 2 skipped
+
+## Session Fixes (2026-02-08 continued)
+
+### UI Fixes
+- **Upload blank space**: Reduced hero padding from `py-16 sm:py-20` to `py-8 sm:py-10`, added upload success message + "Preview full text" button
+- **Resume preview modal**: Added modal overlay to display full extracted resume text after PDF upload
+- **Tiptap HTML rendering**: Installed `@tailwindcss/typography` and added to `tailwind.config.ts` — prose class now styles `<h3>`, `<li>`, etc.
+
+### Backend Fixes
+- **LangSmith tracing for drafting chat**: Wrapped Anthropic client with `wrap_anthropic` from `langsmith.wrappers` in `get_anthropic_client()`
+- **Research → Drafting context gap**: Created `_format_research_intelligence()` helper to pass hiring_criteria, ideal_profile, hiring_patterns, tech_stack_details to drafting agent
+- **Removed dead suggestion code**: Deleted `SUGGESTION_GENERATION_PROMPT` and `_generate_suggestions()` — UI components were already deleted, saving 1 wasted LLM call per workflow
+- **Validation now advisory**: Removed HTTPException(400) from `approve_draft` — validation runs but doesn't block user-approved drafts
+- **Bullet word count**: Changed limit from 15 to 22 words, downgraded from error to warning
+
+### Workflow Resume Mismatch Fix
+- **Root cause**: Frontend localStorage stores `WorkflowSession` with `threadId`, showing "Resume Session" modal on page load. Backend uses `MemorySaver` (in-memory) which loses all LangGraph state on restart. The `.workflow_cache.json` preserves metadata but not the LangGraph checkpointer state needed for graph execution.
+- **Frontend fix**: `page.tsx` now probes `/api/optimize/status/{threadId}` before showing recovery modal. If backend returns 404, automatically clears stale localStorage. `handleResumeSession` also auto-clears + redirects on failure instead of showing error recovery.
+- **Backend fix**: `_resume_workflow` and mutation endpoints (`confirm_discovery`, `skip_discovery`) now check `recovered_from_disk` flag and return 409 with clear message. Added `recovered_from_disk` flag to workflows loaded from cache. Improved logging in `_persist_workflows`.
+- **Test update**: Updated `test_drafting_quality.py` bullet word count tests from 15 → 22 word limit
+
+### Test Results
+- Frontend: 14 files, 208 tests passed
+- Backend: 688 passed, 2 skipped

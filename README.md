@@ -1,6 +1,43 @@
 # Talent Promo
 
-AI-powered resume optimization platform that helps talent present themselves effectively for target job opportunities.
+AI-powered resume optimization that tailors your resume to any job posting in minutes.
+
+![Landing Page](docs/screenshots/01-landing-page.png)
+
+## What It Does
+
+Talent Promo takes your resume (or LinkedIn profile) and a target job posting, then guides you through an AI-powered workflow to produce a polished, ATS-optimized resume tailored specifically for that role.
+
+**The entire process takes 2-5 minutes.** No account needed. Your data stays in your browser.
+
+### How It Works
+
+#### 1. Input Your Profile + Target Job
+
+Paste your resume, upload a PDF/DOCX, or provide a LinkedIn URL. Then add the job posting URL or paste the description. Hit "Start Optimization" and the AI takes over.
+
+#### 2. Research
+
+The AI researches the target company — culture, tech stack, recent news, similar employees — and runs a gap analysis comparing your profile against the job requirements.
+
+![Research Step](docs/screenshots/02-research.png)
+
+#### 3. Discovery Interview
+
+A guided conversation helps the AI uncover hidden strengths and experiences you might not think to highlight. The questions adapt to your seniority level (early career, mid-level, senior). You can skip this step if you prefer.
+
+#### 4. Drafting + AI Editor
+
+The AI generates an ATS-optimized resume, then you refine it in a rich text editor with built-in AI assistance:
+
+- **Quick Actions** — Select text and one-click improve, add keywords, add metrics, or make it more concise
+- **Chat** — Highlight a section and describe what you want changed in plain English
+
+![AI Editor](docs/screenshots/03-editor.png)
+
+#### 5. Export
+
+Download your tailored resume as PDF, DOCX, or TXT. Get an ATS compatibility score with detailed analysis, plus LinkedIn profile optimization suggestions.
 
 ## Privacy by Design
 
@@ -9,10 +46,6 @@ Resumes contain personal addresses, phone numbers, and other sensitive contact i
 LangSmith tracing is enabled for quality and debugging purposes. If you are entering real personal information, be aware that traced data may be retained by the tracing provider.
 
 AI safety guardrails are built in to detect and prevent prompt injection, block toxic content, flag biased language, identify sensitive PII (SSN, credit cards), validate that resume claims are grounded in your actual profile, and sanitize LLM output before display.
-
-## Overview
-
-Talent Promo uses an agentic workflow to analyze your profile and a target job posting, then guides you through an intelligent discovery interview to create an ATS-optimized resume tailored specifically for that role.
 
 ## Architecture
 
@@ -88,13 +121,13 @@ The drafting node is designed to produce resumes that sound human, not AI-genera
 
 **5 Core Principles** (in priority order):
 1. **Faithful**: Every claim traceable to source. No scope merging ("6yr backend + 1yr AI" stays separate). No invented metrics. No employer-scale attribution.
-2. **Concise**: Every bullet under 15 words. One idea per bullet. Formula: `Action Verb + What + Metric`.
+2. **Concise**: Every bullet under 22 words. One idea per bullet. Formula: `Action Verb + What + Metric`.
 3. **Hierarchy-Preserving**: Candidate's most prominent experience stays most prominent. No reordering for keywords.
 4. **Focused**: Top 3-5 job requirements addressed deeply, not all superficially. Silence beats a weak claim.
 5. **Polished**: Zero AI-tell words, zero filler, varied rhythm.
 
 **Programmatic Quality Checks** (`validate_resume()`):
-- Bullet word count (>15 words flagged)
+- Bullet word count (>22 words flagged)
 - Compound sentence detection (two achievements joined with "and"/"while")
 - Summary length enforcement (<50 words)
 - AI-tell word/phrase detection (24 words + 13 phrases)
@@ -122,7 +155,7 @@ The drafting node is designed to produce resumes that sound human, not AI-genera
 ```
 talent-promo/
 ├── apps/
-│   ├── web/                          # Next.js frontend (port 3000)
+│   ├── web/                          # Next.js frontend (port 3001)
 │   │   └── app/
 │   │       ├── optimize/             # Resume optimization wizard
 │   │       ├── components/optimize/  # Step components, ValidationWarnings
@@ -150,7 +183,7 @@ talent-promo/
 │       │   └── run_discovery_tuning.py # CLI: python -m evals.run_discovery_tuning
 │       ├── routers/
 │       │   └── optimize.py           # API endpoints (guardrails-protected)
-│       └── tests/                    # 673+ unit tests
+│       └── tests/                    # 690+ unit tests
 │
 ├── specs/                            # Feature specs
 │   ├── AI_GUARDRAILS_SPEC.md
@@ -163,48 +196,27 @@ talent-promo/
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22+
 - Python 3.11+
 - pnpm
-
-### Environment Setup
-
-1. Copy the environment template:
-
-```bash
-cp .env.example .env
-```
-
-2. Fill in your API keys in `.env`:
-
-```bash
-# Required
-ANTHROPIC_API_KEY=sk-ant-...      # For Claude LLM
-EXA_API_KEY=...                    # For web search
-
-# Optional (for LangSmith tracing)
-LANGCHAIN_API_KEY=ls-...
-LANGCHAIN_PROJECT=talent-promo
-LANGCHAIN_TRACING_V2=true
-
-# Optional (bot protection - bypassed when not set)
-TURNSTILE_SECRET_KEY=...                    # Backend secret key
-NEXT_PUBLIC_TURNSTILE_SITE_KEY=...          # Frontend site key
-```
 
 ### Quick Start with Make
 
 ```bash
-# Install all dependencies
+# Clone and install
+git clone https://github.com/hippogriff-ai/talent-promo.git
+cd talent-promo
 make install
+
+# Configure API keys
+cp .env.example .env
+# Edit .env with your ANTHROPIC_API_KEY and EXA_API_KEY
 
 # Start both frontend and backend
 make dev-all
-
-# Or start them separately in two terminals:
-make dev-backend   # Terminal 1: http://localhost:8000
-make dev-frontend  # Terminal 2: http://localhost:3000
 ```
+
+Then open http://localhost:3001.
 
 ### Manual Setup
 
@@ -236,6 +248,23 @@ pnpm install
 pnpm dev
 ```
 
+### Environment Variables
+
+```bash
+# Required
+ANTHROPIC_API_KEY=sk-ant-...      # For Claude LLM
+EXA_API_KEY=...                    # For web search
+
+# Optional (for LangSmith tracing)
+LANGCHAIN_API_KEY=ls-...
+LANGCHAIN_PROJECT=talent-promo
+LANGCHAIN_TRACING_V2=true
+
+# Optional (bot protection - bypassed when not set)
+TURNSTILE_SECRET_KEY=...                    # Backend secret key
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=...          # Frontend site key
+```
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
@@ -250,6 +279,23 @@ pnpm dev
 | POST | `/api/optimize/{thread_id}/drafting/approve` | Approve draft |
 | POST | `/api/optimize/{thread_id}/drafting/revert` | Go back to editing |
 | GET | `/api/optimize/{thread_id}/export/download/{format}` | Download PDF/DOCX |
+
+## Key Features
+
+### Human-in-the-Loop
+Uses LangGraph's `interrupt()` function for:
+- Discovery interview questions (skippable)
+- Resume review and approval
+- Go back to edit from export/completion
+
+### Streaming
+- SSE for step updates and interrupt notifications
+- `astream_events` for granular LLM token streaming
+
+### AI Editor Assist
+The Tiptap-based editor includes an AI assistant with two modes:
+- **Quick Actions**: Select text and apply one-click improvements (Improve Writing, Add Keywords, Add Metrics, Make Concise, More Professional)
+- **Chat**: Select text and describe changes in natural language; the AI replaces only the highlighted portion
 
 ## Prompt Tuning
 
@@ -284,37 +330,28 @@ cd apps/api
 python -m evals.run_discovery_tuning --iterate
 ```
 
-## Key Features
+## Testing
 
-### Human-in-the-Loop
-Uses LangGraph's `interrupt()` function for:
-- Discovery interview questions (skippable)
-- Resume review and approval
-- Go back to edit from export/completion
+```bash
+# Frontend (244 tests)
+cd apps/web && npx vitest run
 
-### Streaming
-- SSE for step updates and interrupt notifications
-- `astream_events` for granular LLM token streaming
+# Backend (690 tests)
+cd apps/api && python -m pytest
 
-### AI Editor Assist
-The Tiptap-based editor includes an AI assistant with two modes:
-- **Quick Actions**: Select text and apply one-click improvements (Improve Writing, Add Keywords, Add Metrics, Make Concise, More Professional)
-- **Chat**: Select text and describe changes in natural language; the AI replaces only the highlighted portion
-
-> **Next phase**: Whole-document mode — allow the AI to operate on the full document when no text is selected (diff-based review, similar to inline code suggestions). Not supported in the current iteration.
-
-### Client Memory
-Browser-side memory system (localStorage):
-- Session history (last 20 sessions)
-- Experience library (accumulated across sessions)
-- Learned edit preferences with confidence scores
-- Profile/job edits per thread
+# E2E
+cd apps/web && npx playwright test
+```
 
 ## Tech Stack
 
-- **Frontend**: Next.js 14, React, TypeScript, Tiptap (rich text editor)
+- **Frontend**: Next.js 16, React 19, TypeScript, Tiptap (rich text editor)
 - **Backend**: FastAPI, Python 3.11+
 - **Orchestration**: LangGraph with MemorySaver (in-memory, no persistence)
 - **LLM**: Anthropic Claude
 - **Web Search**: EXA API
 - **Safety**: Custom guardrails (7 modules, 182+ tests)
+
+## License
+
+[MIT](LICENSE)

@@ -28,7 +28,6 @@ if os.getenv("LANGSMITH_API_KEY"):
 from fastapi import FastAPI
 
 from routers import documents, optimize, preferences, ratings
-from services.thread_metadata import get_metadata_service
 
 logger = logging.getLogger(__name__)
 
@@ -42,26 +41,12 @@ else:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifecycle."""
-    # Startup
     logger.info("Starting Talent Promo API...")
-
-    # Start the thread cleanup background task (2h TTL)
-    metadata_service = get_metadata_service()
-    metadata_service.start_cleanup_task()
-    logger.info("Thread cleanup task started (2h TTL)")
-
     logger.info("API ready to accept requests")
 
-    yield  # Application runs here
+    yield
 
-    # Shutdown
     logger.info("Shutting down Talent Promo API...")
-
-    # Stop thread cleanup task
-    metadata_service.stop_cleanup_task()
-    logger.info("Thread cleanup task stopped")
-
-    logger.info("API shutdown complete")
 
 
 app = FastAPI(

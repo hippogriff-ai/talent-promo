@@ -302,7 +302,7 @@ async def start_workflow(
     - job_text: Pasted job description (fallback if URL scraping fails)
     """
     # Get client IP from headers (for proxied requests) or fall back to generic
-    client_ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else (x_real_ip or "unknown")
+    client_ip = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else (x_real_ip or "0.0.0.0")
 
     # Verify Turnstile token BEFORE rate limit (so bot requests don't consume rate limit slots)
     await verify_turnstile_token(request.turnstile_token, client_ip)

@@ -13,6 +13,9 @@ Stage specs are in `specs/` directory. Read the relevant spec before executing.
 Read `CONTINUITY.md` before executing.
 After finish, document your changes on a high level in `CONTINUITY.md`
 
+### Compaction Rule
+When `CONTINUITY.md` exceeds 1000 lines, compact the oldest 75% of content: replace detailed entries with a brief summary (bullet points, key facts only), preserving the most recent 25% verbatim. Keep the header sections (Goal, Constraints, Key decisions) intact.
+
 ## Stage Transition Rules
 
 The optimization workflow progresses through these stages:

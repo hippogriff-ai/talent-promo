@@ -23,4 +23,4 @@ COPY . .
 
 ENV PORT=8000
 EXPOSE ${PORT}
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1 --timeout-keep-alive 65
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1 --timeout-keep-alive 65"]

@@ -1,0 +1,5 @@
+{
+  "installCommand": "npx pnpm@8.15.1 install --frozen-lockfile",
+  "buildCommand": "npx pnpm@8.15.1 build",
+  "outputDirectory": ".next"
+}

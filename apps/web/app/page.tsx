@@ -55,24 +55,6 @@ const features = [
   },
 ];
 
-const benefits = [
-  {
-    title: "ATS-Optimized",
-    description: "Beat applicant tracking systems with keyword-optimized formatting",
-    icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
-  },
-  {
-    title: "Tailored Content",
-    description: "Every resume is customized for your specific target job",
-    icon: "M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z",
-  },
-  {
-    title: "Multiple Formats",
-    description: "Download as PDF, Word, or plain text instantly",
-    icon: "M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z",
-  },
-];
-
 export default function Home() {
   const router = useRouter();
   const [showGuide, setShowGuide] = useState(false);
@@ -385,7 +367,7 @@ export default function Home() {
 
               {/* Subheadline */}
               <p className="text-lg text-gray-600 mb-8">
-                Transform your LinkedIn profile into an ATS-optimized resume perfectly tailored
+                Transform your resume into an ATS-optimized version tailored
                 for any job posting. Our AI uncovers your hidden strengths.
               </p>
 
@@ -789,75 +771,6 @@ export default function Home() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Benefits Section */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-6">
-                Why Choose Talent Promo?
-              </h2>
-              <p className="text-lg text-gray-600 mb-8">
-                Stop sending generic resumes that get lost in the pile. Our AI ensures
-                your resume speaks directly to each job&apos;s requirements.
-              </p>
-
-              <div className="space-y-6">
-                {benefits.map((benefit) => (
-                  <div key={benefit.title} className="flex items-start">
-                    <div className="flex-shrink-0 w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center text-green-600">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={benefit.icon} />
-                      </svg>
-                    </div>
-                    <div className="ml-4">
-                      <h3 className="text-lg font-semibold text-gray-900">{benefit.title}</h3>
-                      <p className="text-gray-600">{benefit.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Preview mockup */}
-            <div className="relative">
-              <div className="bg-white rounded-2xl shadow-2xl p-6 border border-gray-100">
-                <div className="flex items-center space-x-2 mb-4">
-                  <div className="w-3 h-3 rounded-full bg-red-400" />
-                  <div className="w-3 h-3 rounded-full bg-yellow-400" />
-                  <div className="w-3 h-3 rounded-full bg-green-400" />
-                </div>
-                <div className="space-y-4">
-                  <div className="h-8 bg-gray-100 rounded w-3/4" />
-                  <div className="h-4 bg-gray-100 rounded w-full" />
-                  <div className="h-4 bg-gray-100 rounded w-5/6" />
-                  <div className="mt-6 pt-4 border-t border-gray-100">
-                    <div className="h-6 bg-green-100 rounded w-1/3 mb-3" />
-                    <div className="h-3 bg-gray-100 rounded w-full mb-2" />
-                    <div className="h-3 bg-gray-100 rounded w-4/5 mb-2" />
-                    <div className="h-3 bg-gray-100 rounded w-full" />
-                  </div>
-                  <div className="pt-4 border-t border-gray-100">
-                    <div className="h-6 bg-green-100 rounded w-1/4 mb-3" />
-                    <div className="flex flex-wrap gap-2">
-                      <div className="h-6 bg-gray-100 rounded-full w-16" />
-                      <div className="h-6 bg-gray-100 rounded-full w-20" />
-                      <div className="h-6 bg-gray-100 rounded-full w-14" />
-                      <div className="h-6 bg-gray-100 rounded-full w-18" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Floating badge */}
-              <div className="absolute -bottom-4 -right-4 bg-green-500 text-white px-4 py-2 rounded-xl shadow-lg font-semibold text-sm">
-                ATS Score: 95%
-              </div>
-            </div>
           </div>
         </div>
       </section>

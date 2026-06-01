@@ -39,6 +39,8 @@ logs/
 # Testing
 coverage/
 .pytest_cache/
+playwright-report/
+test-results/
 
 # Temporal
 .temporal/

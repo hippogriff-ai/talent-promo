@@ -29,3 +29,33 @@
 .animation-delay-4000 {
   animation-delay: 4s;
 }
+
+:root {
+  --bg: #fbf7ec;
+  --bg-2: #f6f0de;
+  --surface: #ffffff;
+  --surface-tint: #fdfbf4;
+  --ink: #1b1a17;
+  --ink-2: #3a3833;
+  --ink-3: #6b6657;
+  --muted: #948d7a;
+  --line: #ece3cc;
+  --line-soft: #f1e9d2;
+  --y-50: #fff8dc;
+  --y-100: #fceba6;
+  --y-200: #f8dc76;
+  --y-300: #f4cc4a;
+  --y-400: #efbc22;
+  --y-500: #e6ac00;
+  --y-600: #c28f00;
+  --y-700: #8c6500;
+  --green: #2f8a4f;
+  --red: #b23a2a;
+  --sh-1:
+    0 1px 0 rgba(27, 26, 23, 0.04),
+    0 1px 2px rgba(27, 26, 23, 0.04);
+  --sh-2:
+    0 1px 0 rgba(27, 26, 23, 0.04),
+    0 8px 24px -8px rgba(27, 26, 23, 0.1);
+  --sh-yellow: 0 8px 24px -10px rgba(230, 172, 0, 0.55);
+}

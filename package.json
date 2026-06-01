@@ -6,7 +6,8 @@
     "dev": "pnpm --parallel --filter web dev",
     "build": "pnpm --recursive build",
     "lint": "pnpm --recursive lint",
-    "test": "pnpm --recursive test"
+    "test": "pnpm --recursive test",
+    "test:e2e": "pnpm --filter web test:e2e"
   },
   "engines": {
     "node": ">=18"

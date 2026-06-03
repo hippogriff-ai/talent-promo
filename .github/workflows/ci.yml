@@ -49,3 +49,38 @@ jobs:
         run: |
           cd apps/api
           python -m pytest tests/ -x -q
+
+  surgical-editor-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pnpm install
+
+      - name: Install API dependencies
+        run: |
+          cd apps/api
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Install Playwright browser
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: Surgical editor browser E2E
+        run: pnpm --filter web test:e2e e2e/tests/resume-editor-surgical.spec.ts

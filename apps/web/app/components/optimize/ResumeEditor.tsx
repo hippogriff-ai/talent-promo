@@ -6,7 +6,12 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import Highlight from "@tiptap/extension-highlight";
-import { useEditorAssist, EditorAction, ChatMessage as HookChatMessage } from "../../hooks/useEditorAssist";
+import {
+  useEditorAssist,
+  EditorAction,
+  ChatMessage as HookChatMessage,
+  EditorSelectionPayload,
+} from "../../hooks/useEditorAssist";
 import { JobPosting, GapAnalysis } from "../../hooks/useWorkflow";
 
 // Chat message type for highlight-and-chat feature (extends hook type with UI fields)
@@ -16,6 +21,9 @@ interface ChatMessage {
   content: string;
   selectedText?: string;
   suggestion?: string;
+  revisionId?: string;
+  canApply?: boolean;
+  verificationSummary?: string;
   timestamp: Date;
 }
 
@@ -27,6 +35,10 @@ interface ResumeEditorProps {
   onSave: (html: string) => Promise<void>;
   onApprove?: () => Promise<void>;
 }
+
+const stripHighlightMarks = (html: string) => html.replace(/<mark[^>]*>/gi, '').replace(/<\/mark>/gi, '');
+
+const plainTextFromHtml = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 
 export default function ResumeEditor({
   threadId,
@@ -45,7 +57,7 @@ export default function ResumeEditor({
   const [chatInput, setChatInput] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
   // Store selection positions to persist highlight
-  const [highlightedRange, setHighlightedRange] = useState<{ from: number; to: number } | null>(null);
+  const [highlightedRange, setHighlightedRange] = useState<EditorSelectionPayload | null>(null);
 
   const {
     suggestion,
@@ -54,11 +66,11 @@ export default function ResumeEditor({
     requestSuggestion,
     clearSuggestion,
     chatWithDraftingAgent,
+    applyRevision,
     syncEditor,
   } = useEditorAssist(threadId);
 
-  // Track last user message for sync tracking
-  const [lastUserMessage, setLastUserMessage] = useState("");
+  const [overrideVerification, setOverrideVerification] = useState(false);
 
   // localStorage key for auto-saving editor content
   const editorStorageKey = `resume_agent:editor_html:${threadId}`;
@@ -68,14 +80,17 @@ export default function ResumeEditor({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
 
+  useEffect(() => {
+    setOverrideVerification(false);
+  }, [suggestion?.revisionId]);
+
   // Load from localStorage if available (preserves unsaved edits across refreshes)
   // Strip any persisted <mark> highlight tags (artifact from editor assist)
-  const stripMarks = (html: string) => html.replace(/<mark[^>]*>/gi, '').replace(/<\/mark>/gi, '');
   const savedHtml = typeof window !== "undefined"
     ? localStorage.getItem(editorStorageKey)
     : null;
   const rawContent = savedHtml || initialContent;
-  const cleanContent = stripMarks(rawContent);
+  const cleanContent = stripHighlightMarks(rawContent);
   // Persist cleaned version so <mark> tags don't reappear on refresh
   if (typeof window !== "undefined" && cleanContent !== rawContent) {
     try { localStorage.setItem(editorStorageKey, cleanContent); } catch { /* ignore */ }
@@ -109,9 +124,16 @@ export default function ResumeEditor({
       const { from, to } = editor.state.selection;
       if (from !== to) {
         const text = editor.state.doc.textBetween(from, to);
+        const contextBefore = editor.state.doc.textBetween(Math.max(0, from - 500), from, " ");
+        const contextAfter = editor.state.doc.textBetween(to, Math.min(editor.state.doc.content.size, to + 500), " ");
         setSelectedText(text);
         // Store the selection range for persistent highlighting
-        setHighlightedRange({ from, to });
+        setHighlightedRange({
+          from,
+          to,
+          context_before: contextBefore,
+          context_after: contextAfter,
+        });
       } else {
         // Don't clear selected text if we have a highlighted range (user clicked away)
         if (!highlightedRange) {
@@ -127,12 +149,26 @@ export default function ResumeEditor({
     },
   });
 
+  useEffect(() => {
+    if (!editor) return;
+    const savedDraft = typeof window !== "undefined"
+      ? localStorage.getItem(editorStorageKey)
+      : null;
+    const nextContent = stripHighlightMarks(savedDraft || initialContent || "");
+    if (!nextContent) return;
+
+    const currentHtml = stripHighlightMarks(editor.getHTML());
+    if (!plainTextFromHtml(currentHtml) && currentHtml !== nextContent) {
+      editor.commands.setContent(nextContent);
+    }
+  }, [editor, editorStorageKey, initialContent]);
+
   const handleSave = async () => {
     if (!editor) return;
 
     setIsSaving(true);
     try {
-      await onSave(editor.getHTML());
+      await onSave(stripHighlightMarks(editor.getHTML()));
       // Clear localStorage draft — backend is now up to date
       try { localStorage.removeItem(editorStorageKey); } catch { /* ignore */ }
     } catch (error) {
@@ -149,7 +185,7 @@ export default function ResumeEditor({
     try {
       // Save first to ensure all edits are persisted
       if (editor) {
-        await onSave(editor.getHTML());
+        await onSave(stripHighlightMarks(editor.getHTML()));
       }
       await onApprove();
     } catch (error) {
@@ -179,7 +215,7 @@ export default function ResumeEditor({
   const stripAllHighlights = useCallback(() => {
     if (!editor) return;
     const { state } = editor;
-    const highlightType = state.schema.marks.highlight;
+    const highlightType = state.schema?.marks?.highlight;
     if (!highlightType) return;
     const { tr } = state;
     tr.removeMark(0, state.doc.content.size, highlightType);
@@ -193,54 +229,73 @@ export default function ResumeEditor({
     }
   };
 
-  const handleAssist = (action: EditorAction) => {
+  const persistCurrentEditor = useCallback(async () => {
+    if (!editor) return false;
+    const currentHtml = stripHighlightMarks(editor.getHTML());
+    const synced = await syncEditor(currentHtml);
+    if (synced) {
+      try {
+        localStorage.setItem(editorStorageKey, currentHtml);
+      } catch {
+        // Ignore quota errors
+      }
+    }
+    return synced;
+  }, [editor, editorStorageKey, syncEditor]);
+
+  const handleAssist = async (action: EditorAction) => {
     if (!selectedText) {
       alert("Please select some text first");
       return;
     }
-    requestSuggestion(action, selectedText);
+    const synced = await persistCurrentEditor();
+    if (!synced) return;
+    requestSuggestion(action, selectedText, undefined, highlightedRange);
   };
 
-  const applySuggestion = useCallback(() => {
-    if (!suggestion || !editor) return;
-
-    // Use the stored range if available (for when editor lost focus)
-    const range = highlightedRange || editor.state.selection;
-    const { from, to } = range;
-
-    // Clear highlight first, then apply change
-    if (highlightedRange) {
-      editor.chain().setTextSelection({ from, to }).unsetHighlight().run();
+  const applyServerRenderedRevision = useCallback((resumeHtml: string) => {
+    if (!editor) return;
+    editor.commands.setContent(resumeHtml);
+    try {
+      localStorage.setItem(editorStorageKey, resumeHtml);
+    } catch {
+      // Ignore quota errors
     }
-
-    // Apply immediately (Tiptap auto-adds to undo history)
-    editor.chain().focus().setTextSelection({ from, to }).deleteRange({ from, to }).insertContent(suggestion.suggestion).run();
-
-    // Strip any lingering highlight marks from the entire document
     stripAllHighlights();
-
-    // Sync to backend (includes tracking for learning) - fire and forget
-    syncEditor(editor.getHTML(), suggestion.original, suggestion.suggestion, lastUserMessage);
-
     clearSuggestion();
     setHighlightedRange(null);
     setSelectedText("");
-  }, [suggestion, editor, clearSuggestion, highlightedRange, syncEditor, lastUserMessage, stripAllHighlights]);
+    setOverrideVerification(false);
+  }, [clearSuggestion, editor, editorStorageKey, stripAllHighlights]);
+
+  const applySuggestion = useCallback(async () => {
+    if (!suggestion?.revisionId || !editor) return;
+
+    const synced = await persistCurrentEditor();
+    if (!synced) return;
+    const result = await applyRevision(suggestion.revisionId, overrideVerification);
+    if (result?.resumeHtml) {
+      applyServerRenderedRevision(result.resumeHtml);
+    }
+  }, [applyRevision, applyServerRenderedRevision, editor, overrideVerification, persistCurrentEditor, suggestion]);
 
   // Handle chat message submission - uses drafting agent with full context
   const handleChatSubmit = async () => {
     if (!chatInput.trim() || !selectedText || isAssistLoading) return;
 
+    const synced = await persistCurrentEditor();
+    if (!synced) return;
+
+    const submittedInput = chatInput;
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: chatInput,
+      content: submittedInput,
       selectedText: selectedText,
       timestamp: new Date(),
     };
 
     setChatMessages((prev) => [...prev, userMessage]);
-    setLastUserMessage(chatInput); // Track for sync
     setChatInput("");
 
     // Convert chat messages to format expected by drafting agent
@@ -250,7 +305,7 @@ export default function ResumeEditor({
     }));
 
     // Use drafting agent - backend uses synced state for full context
-    const result = await chatWithDraftingAgent(selectedText, chatInput, chatHistory);
+    const result = await chatWithDraftingAgent(selectedText, submittedInput, chatHistory, highlightedRange);
 
     if (result) {
       const assistantMessage: ChatMessage = {
@@ -258,6 +313,9 @@ export default function ResumeEditor({
         role: "assistant",
         content: result.suggestion,
         suggestion: result.suggestion,
+        revisionId: result.revisionId,
+        canApply: result.canApply,
+        verificationSummary: result.verification?.summary,
         timestamp: new Date(),
       };
       setChatMessages((prev) => [...prev, assistantMessage]);
@@ -265,32 +323,16 @@ export default function ResumeEditor({
   };
 
   // Apply suggestion from chat message
-  const applyChatSuggestion = useCallback((suggestionText: string) => {
+  const applyChatSuggestion = useCallback(async (revisionId: string, allowOverride = false) => {
     if (!editor) return;
 
-    // Use the stored range if available (for when editor lost focus)
-    const range = highlightedRange || editor.state.selection;
-    const { from, to } = range;
-
-    if (from !== to) {
-      // Clear highlight first, then apply change
-      if (highlightedRange) {
-        editor.chain().setTextSelection({ from, to }).unsetHighlight().run();
-      }
-
-      // Apply immediately (Tiptap auto-adds to undo history)
-      editor.chain().focus().setTextSelection({ from, to }).deleteRange({ from, to }).insertContent(suggestionText).run();
-
-      // Strip any lingering highlight marks from the entire document
-      stripAllHighlights();
-
-      // Sync to backend (includes tracking for learning) - fire and forget
-      syncEditor(editor.getHTML(), selectedText, suggestionText, lastUserMessage);
-
-      setHighlightedRange(null);
-      setSelectedText("");
+    const synced = await persistCurrentEditor();
+    if (!synced) return;
+    const result = await applyRevision(revisionId, allowOverride);
+    if (result?.resumeHtml) {
+      applyServerRenderedRevision(result.resumeHtml);
     }
-  }, [editor, highlightedRange, selectedText, lastUserMessage, syncEditor, stripAllHighlights]);
+  }, [applyRevision, applyServerRenderedRevision, editor, persistCurrentEditor]);
 
   // Handle Enter key in chat input
   const handleChatKeyDown = (e: React.KeyboardEvent) => {
@@ -529,16 +571,65 @@ export default function ResumeEditor({
               {/* Suggestion */}
               {suggestion && (
                 <div className="space-y-3">
-                  <p className="text-sm font-medium text-gray-700">Suggestion</p>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Revision Plan</p>
+                    {suggestion.targetUnit?.label && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {suggestion.targetUnit.label}
+                      </p>
+                    )}
+                  </div>
+                  {suggestion.editPlan && (
+                    <div className="p-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700 space-y-2">
+                      <p className="font-medium text-gray-900">{suggestion.editPlan.goal}</p>
+                      <div className="space-y-1">
+                        {suggestion.editPlan.todos.map((todo) => (
+                          <div key={todo.id} className="flex justify-between gap-2">
+                            <span>{todo.label}</span>
+                            <span className={todo.status === "done" ? "text-green-700" : "text-gray-500"}>
+                              {todo.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-sm font-medium text-gray-700">Proposed Revision</p>
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded">
                     <p className="text-sm text-gray-800">{suggestion.suggestion}</p>
                   </div>
+                  {suggestion.verification && (
+                    <div
+                      className={`p-3 border rounded text-xs ${
+                        suggestion.verification.passed
+                          ? "bg-green-50 border-green-200 text-green-800"
+                          : "bg-amber-50 border-amber-200 text-amber-800"
+                      }`}
+                    >
+                      <p className="font-medium">{suggestion.verification.summary}</p>
+                      {suggestion.verification.evidence && (
+                        <p className="mt-1">&quot;{suggestion.verification.evidence}&quot;</p>
+                      )}
+                    </div>
+                  )}
+                  {suggestion.overrideRequired && (
+                    <label className="flex items-start gap-2 text-xs text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={overrideVerification}
+                        onChange={(event) => setOverrideVerification(event.target.checked)}
+                        className="mt-0.5"
+                      />
+                      Apply with verification override
+                    </label>
+                  )}
                   <div className="flex space-x-2">
                     <button
                       onClick={applySuggestion}
-                      className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                      disabled={!suggestion.revisionId || (!suggestion.canApply && !overrideVerification) || isAssistLoading}
+                      className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
                     >
-                      Apply
+                      Use this revision
                     </button>
                     <button
                       onClick={clearSuggestion}
@@ -607,13 +698,34 @@ export default function ResumeEditor({
                       <div className="flex">
                         <div className="max-w-[85%] bg-gray-100 rounded-lg rounded-tl-none p-3">
                           <p className="text-sm text-gray-800">{msg.content}</p>
-                          {msg.suggestion && (
-                            <button
-                              onClick={() => applyChatSuggestion(msg.suggestion!)}
-                              className="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                          {msg.verificationSummary && (
+                            <p
+                              className={`mt-2 text-xs ${
+                                msg.canApply ? "text-green-700" : "text-amber-700"
+                              }`}
                             >
-                              Apply this suggestion
-                            </button>
+                              {msg.verificationSummary}
+                            </p>
+                          )}
+                          {msg.revisionId && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <button
+                                onClick={() => applyChatSuggestion(msg.revisionId!)}
+                                disabled={!msg.canApply || isAssistLoading}
+                                className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              >
+                                Use this revision
+                              </button>
+                              {!msg.canApply && (
+                                <button
+                                  onClick={() => applyChatSuggestion(msg.revisionId!, true)}
+                                  disabled={isAssistLoading}
+                                  className="px-3 py-1 border border-amber-300 text-amber-800 text-xs rounded hover:bg-amber-50 disabled:opacity-50"
+                                >
+                                  Use with override
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>

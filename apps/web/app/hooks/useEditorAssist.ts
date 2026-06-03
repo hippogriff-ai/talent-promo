@@ -17,6 +17,14 @@ export interface EditorSuggestion {
   original: string;
   suggestion: string;
   action: EditorAction;
+  revisionId?: string;
+  documentRevisionId?: string;
+  targetUnit?: RevisionTarget;
+  editPlan?: EditPlan;
+  patch?: string;
+  verification?: VerificationReport;
+  canApply?: boolean;
+  overrideRequired?: boolean;
   error?: string;
 }
 
@@ -28,6 +36,44 @@ export interface ChatMessage {
 export interface DraftingChatResult {
   suggestion: string;
   cacheHit: boolean;
+  revisionId?: string;
+  canApply?: boolean;
+  verification?: VerificationReport;
+}
+
+export interface RevisionTarget {
+  id: string;
+  kind: string;
+  label: string;
+  text: string;
+  textPreview: string;
+}
+
+export interface EditPlan {
+  id: string;
+  goal: string;
+  targetUnitId: string;
+  targetLabel: string;
+  scope: "single_unit";
+  assertions: Array<{ id: string; description: string; status: string }>;
+  todos: Array<{ id: string; label: string; status: string }>;
+}
+
+export interface VerificationReport {
+  passed: boolean;
+  checks: Array<{ id: string; passed: boolean; reason: string }>;
+  evidence: string;
+  summary: string;
+}
+
+export interface ApplyRevisionResult {
+  success: boolean;
+  resumeHtml?: string;
+  resumeMarkdown?: string;
+  documentRevisionId?: string;
+  commit?: { sha: string; message: string } | null;
+  changedUnitIds?: string[];
+  error?: string;
 }
 
 export interface UseEditorAssistReturn {
@@ -37,21 +83,34 @@ export interface UseEditorAssistReturn {
   requestSuggestion: (
     action: EditorAction,
     selectedText: string,
-    instructions?: string
+    instructions?: string,
+    editorSelection?: EditorSelectionPayload | null
   ) => Promise<void>;
   clearSuggestion: () => void;
   // New methods for enhanced drafting chat
   chatWithDraftingAgent: (
     selectedText: string,
     userMessage: string,
-    chatHistory: ChatMessage[]
+    chatHistory: ChatMessage[],
+    editorSelection?: EditorSelectionPayload | null
   ) => Promise<DraftingChatResult | null>;
   syncEditor: (
     html: string,
     original?: string,
     suggestion?: string,
     userMessage?: string
-  ) => void;
+  ) => Promise<boolean>;
+  applyRevision: (
+    revisionId: string,
+    overrideVerification?: boolean
+  ) => Promise<ApplyRevisionResult | null>;
+}
+
+export interface EditorSelectionPayload {
+  from: number;
+  to: number;
+  context_before?: string;
+  context_after?: string;
 }
 
 export function useEditorAssist(threadId: string | null): UseEditorAssistReturn {
@@ -62,8 +121,47 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
   // Track pending syncs to avoid duplicate requests
   const pendingSyncRef = useRef<AbortController | null>(null);
 
+  const actionMessage = useCallback((action: EditorAction, instructions?: string) => {
+    if (action === "custom") {
+      return instructions || "Revise the selected resume text.";
+    }
+    const messages: Record<EditorAction, string> = {
+      improve: "Improve the selected resume text.",
+      add_keywords: "Add relevant ATS keywords naturally.",
+      quantify: "Add credible metrics or quantification where possible.",
+      shorten: "Make the selected resume text more concise.",
+      rewrite: "Rewrite the selected resume text with fresh language.",
+      fix_tone: "Make the selected resume text more professional and confident.",
+      custom: "Revise the selected resume text.",
+    };
+    return instructions || messages[action];
+  }, []);
+
+  const suggestionFromRevision = useCallback(
+    (data: any, fallbackOriginal: string, action: EditorAction): EditorSuggestion => ({
+      success: true,
+      original: data.targetUnit?.text || fallbackOriginal,
+      suggestion: data.proposedText || data.suggestion || "",
+      action,
+      revisionId: data.revisionId,
+      documentRevisionId: data.documentRevisionId,
+      targetUnit: data.targetUnit,
+      editPlan: data.editPlan,
+      patch: data.patch,
+      verification: data.verification,
+      canApply: data.canApply,
+      overrideRequired: data.overrideRequired,
+    }),
+    []
+  );
+
   const requestSuggestion = useCallback(
-    async (action: EditorAction, selectedText: string, instructions?: string) => {
+    async (
+      action: EditorAction,
+      selectedText: string,
+      instructions?: string,
+      editorSelection?: EditorSelectionPayload | null
+    ) => {
       if (!threadId) {
         setError("No active workflow");
         return;
@@ -78,13 +176,15 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
       setError(null);
 
       try {
-        const response = await fetch(`/api/optimize/${threadId}/editor/assist`, {
+        const response = await fetch(`/api/resume/documents/${threadId}/revision`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action,
+            user_message: actionMessage(action, instructions),
             selected_text: selectedText,
             instructions,
+            editor_selection: editorSelection,
           }),
         });
 
@@ -96,12 +196,7 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
         const data = await response.json();
 
         if (data.success) {
-          setSuggestion({
-            success: true,
-            original: selectedText,
-            suggestion: data.suggestion,
-            action,
-          });
+          setSuggestion(suggestionFromRevision(data, selectedText, action));
         } else {
           setError(data.error || "Failed to generate suggestion");
         }
@@ -111,7 +206,7 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
         setIsLoading(false);
       }
     },
-    [threadId]
+    [actionMessage, suggestionFromRevision, threadId]
   );
 
   const clearSuggestion = useCallback(() => {
@@ -125,7 +220,8 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
     async (
       selectedText: string,
       userMessage: string,
-      chatHistory: ChatMessage[]
+      chatHistory: ChatMessage[],
+      editorSelection?: EditorSelectionPayload | null
     ): Promise<DraftingChatResult | null> => {
       if (!threadId) {
         setError("No active workflow");
@@ -141,12 +237,14 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
       setError(null);
 
       try {
-        const response = await fetch(`/api/optimize/${threadId}/editor/chat`, {
+        const response = await fetch(`/api/resume/documents/${threadId}/revision`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             selected_text: selectedText,
             user_message: userMessage,
+            action: "custom",
+            editor_selection: editorSelection,
             chat_history: chatHistory.map((m) => ({
               role: m.role,
               content: m.content,
@@ -163,15 +261,13 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
 
         if (data.success) {
           // Also set as current suggestion for apply flow
-          setSuggestion({
-            success: true,
-            original: selectedText,
-            suggestion: data.suggestion,
-            action: "custom",
-          });
+          setSuggestion(suggestionFromRevision(data, selectedText, "custom"));
           return {
-            suggestion: data.suggestion,
+            suggestion: data.proposedText || data.suggestion,
             cacheHit: data.cache_hit || false,
+            revisionId: data.revisionId,
+            canApply: data.canApply,
+            verification: data.verification,
           };
         } else {
           setError(data.error || "Failed to generate suggestion");
@@ -184,20 +280,60 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
         setIsLoading(false);
       }
     },
+    [suggestionFromRevision, threadId]
+  );
+
+  const applyRevision = useCallback(
+    async (
+      revisionId: string,
+      overrideVerification = false
+    ): Promise<ApplyRevisionResult | null> => {
+      if (!threadId) {
+        setError("No active workflow");
+        return null;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(`/api/resume/documents/${threadId}/apply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            revision_id: revisionId,
+            override_verification: overrideVerification,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Failed to apply revision");
+        }
+        if (!data.success) {
+          throw new Error(data.error || "Failed to apply revision");
+        }
+        return data;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Unknown error");
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
     [threadId]
   );
 
-  // Sync editor state to backend (fire and forget)
-  // Called after apply or undo to keep backend state in sync
+  // Sync editor state to backend before AI revisions or final apply.
   // Also tracks accepted suggestions for preference learning
   const syncEditor = useCallback(
-    (
+    async (
       html: string,
       original?: string,
       suggestion?: string,
       userMessage?: string
-    ) => {
-      if (!threadId) return;
+    ): Promise<boolean> => {
+      if (!threadId) return false;
 
       // Cancel any pending sync
       if (pendingSyncRef.current) {
@@ -207,24 +343,34 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
       const controller = new AbortController();
       pendingSyncRef.current = controller;
 
-      // Fire and forget - don't await
-      fetch(`/api/optimize/${threadId}/editor/sync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          html,
-          original: original || "",
-          suggestion: suggestion || "",
-          user_message: userMessage || "",
-        }),
-        signal: controller.signal,
-      }).catch(() => {
-        // Ignore errors - this is best effort
-      }).finally(() => {
+      try {
+        const response = await fetch(`/api/optimize/${threadId}/editor/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            html,
+            original: original || "",
+            suggestion: suggestion || "",
+            user_message: userMessage || "",
+          }),
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || "Failed to sync editor content");
+        }
+        return true;
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") {
+          return false;
+        }
+        setError(e instanceof Error ? e.message : "Failed to sync editor content");
+        return false;
+      } finally {
         if (pendingSyncRef.current === controller) {
           pendingSyncRef.current = null;
         }
-      });
+      }
     },
     [threadId]
   );
@@ -237,5 +383,6 @@ export function useEditorAssist(threadId: string | null): UseEditorAssistReturn 
     clearSuggestion,
     chatWithDraftingAgent,
     syncEditor,
+    applyRevision,
   };
 }

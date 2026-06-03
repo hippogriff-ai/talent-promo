@@ -6,6 +6,7 @@ const mockRequestSuggestion = vi.fn();
 const mockClearSuggestion = vi.fn();
 const mockChatWithDraftingAgent = vi.fn();
 const mockSyncEditor = vi.fn();
+const mockApplyRevision = vi.fn();
 
 let mockSuggestion: any = null;
 let mockIsLoading = false;
@@ -20,6 +21,7 @@ vi.mock("../../hooks/useEditorAssist", () => ({
     clearSuggestion: mockClearSuggestion,
     chatWithDraftingAgent: mockChatWithDraftingAgent,
     syncEditor: mockSyncEditor,
+    applyRevision: mockApplyRevision,
   }),
 }));
 
@@ -44,12 +46,15 @@ const mockEditorChain = {
 
 const mockEditor = {
   chain: vi.fn(() => mockEditorChain),
+  commands: {
+    setContent: vi.fn(),
+  },
   isActive: vi.fn(() => false),
   getHTML: vi.fn(() => "<h1>Test Resume</h1>"),
   can: vi.fn(() => ({ undo: () => true, redo: () => true })),
   state: {
     selection: { from: 0, to: 0 },
-    doc: { textBetween: vi.fn(() => "") },
+    doc: { textBetween: vi.fn(() => ""), content: { size: 100 } },
   },
 };
 
@@ -105,6 +110,13 @@ describe("ResumeEditor", () => {
     mockIsLoading = false;
     mockError = null;
     mockEditorChain.run.mockClear();
+    mockEditor.getHTML.mockReturnValue("<h1>Test Resume</h1>");
+    mockEditor.state.doc.textBetween.mockReturnValue("");
+    mockSyncEditor.mockResolvedValue(true);
+    mockApplyRevision.mockResolvedValue({
+      success: true,
+      resumeHtml: "<h1>Updated Resume</h1>",
+    });
   });
 
   afterEach(() => {
@@ -202,10 +214,12 @@ describe("ResumeEditor", () => {
         original: "old text",
         suggestion: "Improved version of the text",
         action: "improve",
+        revisionId: "revision-1",
+        canApply: true,
       };
       render(<ResumeEditor {...defaultProps} />);
       expect(screen.getByText("Improved version of the text")).toBeInTheDocument();
-      expect(screen.getByText("Apply")).toBeInTheDocument();
+      expect(screen.getByText("Use this revision")).toBeInTheDocument();
       expect(screen.getByText("Dismiss")).toBeInTheDocument();
     });
 
@@ -215,10 +229,32 @@ describe("ResumeEditor", () => {
         original: "old",
         suggestion: "new",
         action: "improve",
+        revisionId: "revision-1",
+        canApply: true,
       };
       render(<ResumeEditor {...defaultProps} />);
       fireEvent.click(screen.getByText("Dismiss"));
       expect(mockClearSuggestion).toHaveBeenCalled();
+    });
+
+    it("syncs current editor HTML before applying a server revision", async () => {
+      mockSuggestion = {
+        success: true,
+        original: "old",
+        suggestion: "new",
+        action: "improve",
+        revisionId: "revision-1",
+        canApply: true,
+      };
+      mockEditor.getHTML.mockReturnValue("<h1>Current Unsynced Resume</h1>");
+
+      render(<ResumeEditor {...defaultProps} />);
+      fireEvent.click(screen.getByText("Use this revision"));
+
+      await waitFor(() => {
+        expect(mockSyncEditor).toHaveBeenCalledWith("<h1>Current Unsynced Resume</h1>");
+        expect(mockApplyRevision).toHaveBeenCalledWith("revision-1", false);
+      });
     });
   });
 
@@ -343,11 +379,11 @@ describe("ResumeEditor", () => {
       // Simulate text selection via the onSelectionUpdate callback
       if (onSelectionUpdateCallback) {
         const mockEditorArg = {
-          state: {
-            selection: { from: 5, to: 15 },
-            doc: { textBetween: vi.fn(() => "0123456789") },
-          },
-        };
+            state: {
+              selection: { from: 5, to: 15 },
+              doc: { textBetween: vi.fn(() => "0123456789"), content: { size: 100 } },
+            },
+          };
         onSelectionUpdateCallback({ editor: mockEditorArg });
       }
 
@@ -367,7 +403,7 @@ describe("ResumeEditor", () => {
           editor: {
             state: {
               selection: { from: 0, to: 10 },
-              doc: { textBetween: () => "Hello World" },
+              doc: { textBetween: () => "Hello World", content: { size: 100 } },
             },
           },
         });

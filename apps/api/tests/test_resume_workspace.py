@@ -232,12 +232,15 @@ def test_resume_revision_api_apply_updates_workflow_state(tmp_path: Path, monkey
     assert "40 engineering teams" in _workflows[thread_id]["state"]["resume_html"]
 
 
-def test_resume_apply_refreshes_from_synced_html_and_preserves_manual_edits(tmp_path: Path, monkeypatch):
+def test_resume_apply_rejects_stale_revision_then_preserves_manual_edits_with_fresh_revision(
+    tmp_path: Path,
+    monkeypatch,
+):
     if not shutil.which("git"):
         pytest.skip("git is required for workspace versioning")
 
     monkeypatch.setattr(resume_router, "workspace_service", ResumeWorkspaceService(tmp_path))
-    thread_id = "resume-api-manual-sync-thread"
+    thread_id = f"resume-api-manual-sync-thread-{tmp_path.name}"
     _workflows[thread_id] = {
         "state": {
             "resume_html": SAMPLE_HTML,
@@ -248,6 +251,12 @@ def test_resume_apply_refreshes_from_synced_html_and_preserves_manual_edits(tmp_
         "created_at": "2026-01-01T00:00:00",
     }
     client = TestClient(app)
+    apply_route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", "") == "/api/resume/documents/{document_id}/apply"
+    )
+    assert apply_route.endpoint.__globals__["workspace_service"] is resume_router.workspace_service
 
     revision_response = client.post(
         f"/api/resume/documents/{thread_id}/revision",
@@ -258,11 +267,19 @@ def test_resume_apply_refreshes_from_synced_html_and_preserves_manual_edits(tmp_
         },
     )
     revision = revision_response.json()
+    pending = resume_router.workspace_service.load_pending_revision(thread_id, revision["revisionId"])
+    assert pending["documentRevisionId"] == revision["documentRevisionId"]
 
-    _workflows[thread_id]["state"]["resume_html"] = SAMPLE_HTML.replace(
+    synced_html = SAMPLE_HTML.replace(
         "Senior engineer with ten years of platform experience.",
         "Principal engineer with ten years of platform experience.",
     )
+    sync_response = client.post(
+        f"/api/optimize/{thread_id}/editor/sync",
+        json={"html": synced_html},
+    )
+    assert sync_response.status_code == 200
+    assert "Principal engineer with ten years" in _workflows[thread_id]["state"]["resume_html"]
 
     apply_response = client.post(
         f"/api/resume/documents/{thread_id}/apply",
@@ -270,7 +287,29 @@ def test_resume_apply_refreshes_from_synced_html_and_preserves_manual_edits(tmp_
     )
 
     assert apply_response.status_code == 200
-    html = apply_response.json()["resumeHtml"]
+    stale_apply = apply_response.json()
+    assert stale_apply["success"] is False
+    assert "changed after this revision was generated" in stale_apply["error"]
+    assert "Principal engineer with ten years" in _workflows[thread_id]["state"]["resume_html"]
+
+    fresh_revision_response = client.post(
+        f"/api/resume/documents/{thread_id}/revision",
+        json={
+            "selected_text": "Built internal deployment platform for engineering teams.",
+            "user_message": "improve",
+            "proposed_text": "Built deployment platform for 40 engineering teams.",
+        },
+    )
+    assert fresh_revision_response.status_code == 200
+    fresh_revision = fresh_revision_response.json()
+
+    fresh_apply_response = client.post(
+        f"/api/resume/documents/{thread_id}/apply",
+        json={"revision_id": fresh_revision["revisionId"]},
+    )
+
+    assert fresh_apply_response.status_code == 200
+    html = fresh_apply_response.json()["resumeHtml"]
     assert "Principal engineer with ten years" in html
     assert "Built deployment platform for 40 engineering teams." in html
 

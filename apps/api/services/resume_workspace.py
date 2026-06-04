@@ -1072,6 +1072,14 @@ class ResumeWorkspaceService:
     ) -> dict[str, Any]:
         document_before = self.load_document(document_id)
         revision = self.load_pending_revision(document_id, revision_id)
+        expected_revision_id = revision.get("documentRevisionId")
+        target_unit_id = revision["targetUnit"]["id"]
+        if expected_revision_id and expected_revision_id != document_before.get("revisionId"):
+            raise PatchMismatchError(
+                "Resume document changed after this revision was generated; regenerate the revision.",
+                unit_text(find_unit(document_before, target_unit_id) or {}),
+                target_unit_id,
+            )
         before_snapshot = json.loads(json.dumps(document_before))
         document_after = apply_patch_to_document(
             document_before,
@@ -1080,7 +1088,6 @@ class ResumeWorkspaceService:
             verification=revision.get("verification"),
         )
         changed = changed_text_units(before_snapshot, document_after)
-        target_unit_id = revision["targetUnit"]["id"]
         if changed != [target_unit_id]:
             raise PatchMismatchError(
                 "Patch changed units outside the resolved target",

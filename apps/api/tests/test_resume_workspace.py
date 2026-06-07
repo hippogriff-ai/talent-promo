@@ -314,6 +314,67 @@ def test_resume_apply_rejects_stale_revision_then_preserves_manual_edits_with_fr
     assert "Built deployment platform for 40 engineering teams." in html
 
 
+def test_resume_undo_preserves_manual_sync_after_latest_ai_edit(tmp_path: Path, monkeypatch):
+    if not shutil.which("git"):
+        pytest.skip("git is required for workspace versioning")
+
+    monkeypatch.setattr(resume_router, "workspace_service", ResumeWorkspaceService(tmp_path))
+    thread_id = f"resume-api-undo-manual-sync-thread-{tmp_path.name}"
+    _workflows[thread_id] = {
+        "state": {
+            "resume_html": SAMPLE_HTML,
+            "job_posting": {"title": "Staff Engineer", "company_name": "Acme"},
+            "gap_analysis": {"keywords_to_include": ["platform"]},
+        },
+        "config": {},
+        "created_at": "2026-01-01T00:00:00",
+    }
+    client = TestClient(app)
+
+    revision_response = client.post(
+        f"/api/resume/documents/{thread_id}/revision",
+        json={
+            "selected_text": "Built internal deployment platform for engineering teams.",
+            "user_message": "improve",
+            "proposed_text": "Built deployment platform for 40 engineering teams.",
+        },
+    )
+    revision = revision_response.json()
+    apply_response = client.post(
+        f"/api/resume/documents/{thread_id}/apply",
+        json={"revision_id": revision["revisionId"]},
+    )
+    assert apply_response.status_code == 200
+    applied_html = apply_response.json()["resumeHtml"]
+    assert "Built deployment platform for 40 engineering teams." in applied_html
+
+    synced_html = applied_html.replace(
+        "Senior engineer with ten years of platform experience.",
+        "Principal engineer with ten years of platform experience.",
+    )
+    sync_response = client.post(
+        f"/api/optimize/{thread_id}/editor/sync",
+        json={"html": synced_html},
+    )
+    assert sync_response.status_code == 200
+
+    undo_response = client.post(f"/api/resume/documents/{thread_id}/undo")
+
+    assert undo_response.status_code == 200
+    undo = undo_response.json()
+    assert undo["success"] is True
+    assert "Principal engineer with ten years" in undo["resumeHtml"]
+    assert "Built internal deployment platform for engineering teams." in undo["resumeHtml"]
+    assert "Built deployment platform for 40 engineering teams." not in undo["resumeHtml"]
+    log_subjects = resume_router.workspace_service.run_git(
+        thread_id,
+        ["log", "--format=%s", "--max-count=3"],
+    ).stdout.splitlines()
+    assert log_subjects[0].startswith("Undo resume edit to ")
+    assert log_subjects[1] == "Refresh resume workspace from synced editor HTML"
+    assert log_subjects[2].startswith("Apply resume edit to ")
+
+
 def test_resume_revision_passes_chat_history_and_source_context_to_llm(tmp_path: Path, monkeypatch):
     if not shutil.which("git"):
         pytest.skip("git is required for workspace versioning")

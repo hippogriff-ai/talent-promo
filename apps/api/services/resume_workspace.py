@@ -1021,13 +1021,30 @@ class ResumeWorkspaceService:
 
     def commit(self, document_id: str, message: str) -> dict[str, Any] | None:
         self.ensure_git_repo(document_id)
-        self.run_git(document_id, ["add", ".gitignore", "resume.json", "resume.md", "progress.md"])
+        paths = [".gitignore", "resume.json", "resume.md", "progress.md"]
+        if (self.workspace_dir(document_id) / "accepted_edits.json").exists():
+            paths.append("accepted_edits.json")
+        self.run_git(document_id, ["add", *paths])
         staged = self.run_git(document_id, ["diff", "--cached", "--quiet"], check=False)
         if staged.returncode == 0:
             return None
         self.run_git(document_id, ["commit", "-m", message])
         commit_sha = self.run_git(document_id, ["rev-parse", "HEAD"]).stdout.strip()
         return {"sha": commit_sha, "message": message}
+
+    def load_accepted_edits(self, document_id: str) -> list[dict[str, Any]]:
+        path = self.workspace_dir(document_id) / "accepted_edits.json"
+        if not path.exists():
+            return []
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data.get("edits", [])
+
+    def write_accepted_edits(self, document_id: str, edits: list[dict[str, Any]]) -> None:
+        path = self.workspace_dir(document_id) / "accepted_edits.json"
+        path.write_text(
+            json.dumps({"edits": edits}, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
 
     def save_pending_revision(self, document_id: str, revision: dict[str, Any]) -> None:
         pending_dir = self.workspace_dir(document_id) / "pending"
@@ -1097,8 +1114,19 @@ class ResumeWorkspaceService:
 
         rendered_html = render_html(document_after)
         document_after["sourceHtmlHash"] = html_hash(rendered_html)
+        accepted_edits = self.load_accepted_edits(document_id)
+        accepted_edits.append(
+            {
+                "revisionId": revision["revisionId"],
+                "targetUnitId": target_unit_id,
+                "originalText": revision["targetUnit"]["text"],
+                "proposedText": revision["proposedText"],
+                "appliedAt": utc_now(),
+            }
+        )
         self.write_workspace_files(document_id, document_after)
         self.write_progress_for_revision(document_id, revision, "applied")
+        self.write_accepted_edits(document_id, accepted_edits)
         commit_meta = self.commit(document_id, f"Apply resume edit to {target_unit_id}")
         return {
             "document": document_after,
@@ -1110,24 +1138,51 @@ class ResumeWorkspaceService:
 
     def diff(self, document_id: str) -> dict[str, Any]:
         self.ensure_git_repo(document_id)
-        log = self.run_git(document_id, ["log", "--format=%H", "--max-count=2"], check=False).stdout.splitlines()
-        if len(log) < 2:
-            return {"diff": "", "commit": log[0] if log else None}
-        patch = self.run_git(document_id, ["show", "--stat", "--patch", "--no-ext-diff", "HEAD"]).stdout
-        return {"diff": patch, "commit": log[0]}
+        log = self.run_git(document_id, ["log", "--format=%H%x01%s"], check=False).stdout.splitlines()
+        for line in log:
+            commit_sha, _, subject = line.partition("\x01")
+            if subject.startswith("Apply resume edit to "):
+                patch = self.run_git(document_id, ["show", "--stat", "--patch", "--no-ext-diff", commit_sha]).stdout
+                return {"diff": patch, "commit": commit_sha}
+        return {"diff": "", "commit": None}
 
     def undo(self, document_id: str) -> dict[str, Any]:
         self.ensure_git_repo(document_id)
-        log = self.run_git(document_id, ["log", "--format=%H", "--max-count=2"], check=False).stdout.splitlines()
-        if len(log) < 2:
+        accepted_edits = self.load_accepted_edits(document_id)
+        edit_to_undo = next((edit for edit in reversed(accepted_edits) if not edit.get("undoneAt")), None)
+        if edit_to_undo is None:
             raise ResumeWorkspaceError("No accepted edit is available to undo")
-        self.run_git(document_id, ["revert", "--no-edit", "HEAD"])
+
         document = self.load_document(document_id)
+        target_unit_id = edit_to_undo["targetUnitId"]
+        target = find_unit(document, target_unit_id)
+        if not target or target.get("kind") not in TEXT_UNIT_KINDS:
+            raise PatchMismatchError("Accepted edit target no longer exists", "", target_unit_id)
+
+        current = target.get("text", "")
+        proposed = edit_to_undo["proposedText"]
+        if current == proposed or normalize_for_match(current) == normalize_for_match(proposed):
+            target["text"] = edit_to_undo["originalText"]
+        else:
+            raise PatchMismatchError(
+                "Current target unit no longer matches the accepted edit; cannot undo safely",
+                current,
+                target_unit_id,
+            )
+
+        document["revisionId"] = f"rev_{uuid.uuid4().hex[:12]}"
+        document["updatedAt"] = utc_now()
         rendered_html = render_html(document)
+        document["sourceHtmlHash"] = html_hash(rendered_html)
+        edit_to_undo["undoneAt"] = utc_now()
+        edit_to_undo["undoRevisionId"] = document["revisionId"]
+        self.write_workspace_files(document_id, document, "Undid latest accepted resume edit.")
+        self.write_accepted_edits(document_id, accepted_edits)
+        commit_meta = self.commit(document_id, f"Undo resume edit to {target_unit_id}")
         commit_sha = self.run_git(document_id, ["rev-parse", "HEAD"]).stdout.strip()
         return {
             "document": document,
             "resumeHtml": rendered_html,
             "resumeMarkdown": render_markdown(document),
-            "commit": {"sha": commit_sha, "message": "Revert latest resume edit"},
+            "commit": commit_meta or {"sha": commit_sha, "message": f"Undo resume edit to {target_unit_id}"},
         }

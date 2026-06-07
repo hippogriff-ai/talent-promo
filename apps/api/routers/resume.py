@@ -385,6 +385,13 @@ async def undo_resume_revision(document_id: str):
     _ensure_document_from_workflow(document_id)
     try:
         result = workspace_service.undo(document_id)
+    except PatchMismatchError as exc:
+        return {
+            "success": False,
+            "error": exc.reason,
+            "targetUnitId": exc.target_unit_id,
+            "currentUnitText": exc.current_text,
+        }
     except ResumeWorkspaceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

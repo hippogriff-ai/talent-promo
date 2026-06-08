@@ -34,7 +34,8 @@ def get_llm():
 
 
 EDITOR_PROMPTS = {
-    "improve": """You are an expert resume writer. Improve the following text to be more impactful and professional while maintaining the same core meaning.
+    "improve": """You are an expert resume writer. Improve the following text to be more impactful and
+professional while maintaining the same core meaning.
 
 Guidelines:
 - Use strong action verbs
@@ -45,7 +46,8 @@ Guidelines:
 
 Return ONLY the improved text, no explanations.""",
 
-    "add_keywords": """You are an ATS optimization expert. Add relevant keywords to the following text to improve its ATS score for the target role.
+    "add_keywords": """You are an ATS optimization expert. Add relevant keywords to the following text to improve
+its ATS score for the target role.
 
 Guidelines:
 - Incorporate keywords naturally
@@ -55,7 +57,8 @@ Guidelines:
 
 Return ONLY the optimized text with keywords, no explanations.""",
 
-    "quantify": """You are an expert at quantifying achievements. Rewrite the following to include specific numbers, percentages, or metrics.
+    "quantify": """You are an expert at quantifying achievements. Rewrite the following to include specific
+numbers, percentages, or metrics.
 
 Guidelines:
 - Add realistic estimates if exact numbers aren't provided
@@ -64,7 +67,8 @@ Guidelines:
 
 Return ONLY the quantified text, no explanations.""",
 
-    "shorten": """You are an expert at concise professional writing. Shorten the following text while preserving the key achievements and impact.
+    "shorten": """You are an expert at concise professional writing. Shorten the following text while preserving
+the key achievements and impact.
 
 Guidelines:
 - Cut filler words and redundancy
@@ -74,7 +78,8 @@ Guidelines:
 
 Return ONLY the shortened text, no explanations.""",
 
-    "rewrite": """You are an expert resume writer. Completely rewrite the following section with fresh language and structure.
+    "rewrite": """You are an expert resume writer. Completely rewrite the following section with fresh language
+and structure.
 
 Guidelines:
 - Use different action verbs
@@ -84,7 +89,8 @@ Guidelines:
 
 Return ONLY the rewritten text, no explanations.""",
 
-    "fix_tone": """You are an expert at professional writing. Adjust the following to sound more professional and confident without being arrogant.
+    "fix_tone": """You are an expert at professional writing. Adjust the following to sound more professional and
+confident without being arrogant.
 
 Guidelines:
 - Remove uncertainty words ("helped", "assisted with")
@@ -147,6 +153,8 @@ async def get_editor_suggestion(
     full_resume: str,
     job_context: dict,
     instructions: str | None = None,
+    chat_history: list[dict[str, str]] | None = None,
+    source_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Generate AI suggestion for editor action.
 
@@ -158,6 +166,8 @@ async def get_editor_suggestion(
         full_resume: The full resume HTML for context
         job_context: Job posting and gap analysis context
         instructions: Optional custom instructions from user
+        chat_history: Previous editor chat turns for multi-turn requests
+        source_context: Rich profile/job/drafting context for source grounding
 
     Returns:
         Dict with suggestion and metadata
@@ -187,11 +197,34 @@ Return ONLY the modified text, no explanations."""
         else:
             prompt = EDITOR_PROMPTS[action]
 
+        source_context = source_context or {}
+        chat_history = chat_history or []
+        history_text = "\n".join(
+            f"{message.get('role', 'user').upper()}: {message.get('content', '')}"
+            for message in chat_history[-12:]
+            if message.get("content")
+        )
+
+        source_lines = [
+            f"PROFILE SOURCE:\n{str(source_context.get('profile_text', ''))[:4000]}",
+            f"JOB SOURCE:\n{str(source_context.get('job_text', ''))[:4000]}",
+            f"GAP ANALYSIS:\n{str(source_context.get('gap_analysis', {}))[:2000]}",
+        ]
+
         # Build context
         context = f"""
 TARGET ROLE: {job_context.get('title', 'Unknown')} at {job_context.get('company', 'Unknown')}
 
 KEY KEYWORDS TO INCLUDE: {', '.join(job_context.get('keywords', [])[:10])}
+
+SOURCE-GROUNDING CONTEXT:
+{chr(10).join(source_lines)}
+
+CURRENT RESUME HTML:
+{full_resume[:5000]}
+
+PRIOR EDITOR CHAT:
+{history_text or 'None'}
 
 SELECTED TEXT TO MODIFY:
 {selected_text}
@@ -247,10 +280,19 @@ async def regenerate_section(
     logger.info(f"Regenerating section: {section}")
 
     section_prompts = {
-        "summary": "Write a compelling 2-3 sentence professional summary that positions this candidate perfectly for the target role.",
-        "experience": "Rewrite this experience section with stronger action verbs, quantified achievements, and ATS keywords.",
-        "skills": "Reorganize and optimize this skills section for ATS, prioritizing skills mentioned in the job posting.",
-        "education": "Format this education section professionally and highlight any relevant coursework or achievements.",
+        "summary": (
+            "Write a compelling 2-3 sentence professional summary that positions this candidate perfectly "
+            "for the target role."
+        ),
+        "experience": (
+            "Rewrite this experience section with stronger action verbs, quantified achievements, and ATS keywords."
+        ),
+        "skills": (
+            "Reorganize and optimize this skills section for ATS, prioritizing skills mentioned in the job posting."
+        ),
+        "education": (
+            "Format this education section professionally and highlight any relevant coursework or achievements."
+        ),
     }
 
     prompt = section_prompts.get(section, f"Rewrite this {section} section to be more impactful and ATS-friendly.")
@@ -275,7 +317,9 @@ ADDITIONAL CONTEXT:
 Return ONLY the HTML for this section, formatted for a rich text editor."""
 
         messages = [
-            SystemMessage(content="You are an expert resume writer creating ATS-optimized, professional resume sections."),
+            SystemMessage(
+                content="You are an expert resume writer creating ATS-optimized, professional resume sections."
+            ),
             HumanMessage(content=context),
         ]
 

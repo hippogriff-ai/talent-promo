@@ -32,14 +32,15 @@ describe("useEditorAssist", () => {
       expect(typeof result.current.clearSuggestion).toBe("function");
       expect(typeof result.current.chatWithDraftingAgent).toBe("function");
       expect(typeof result.current.syncEditor).toBe("function");
+      expect(typeof result.current.applyRevision).toBe("function");
     });
   });
 
   describe("requestSuggestion", () => {
-    it("calls /editor/assist with correct payload", async () => {
+    it("calls /api/resume revision with correct payload", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ success: true, suggestion: "Improved text" }),
+        json: () => Promise.resolve({ success: true, proposedText: "Improved text" }),
       });
 
       const { result } = renderHook(() => useEditorAssist("thread-123"));
@@ -49,22 +50,56 @@ describe("useEditorAssist", () => {
       });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "/api/optimize/thread-123/editor/assist",
+        "/api/resume/documents/thread-123/revision",
         expect.objectContaining({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "improve",
+            user_message: "Improve the selected resume text.",
             selected_text: "original text",
           }),
         })
       );
     });
 
+    it("sends editor selection context when provided", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true, proposedText: "Improved text" }),
+      });
+
+      const { result } = renderHook(() => useEditorAssist("thread-123"));
+
+      await act(async () => {
+        await result.current.requestSuggestion("improve", "original text", undefined, {
+          from: 10,
+          to: 23,
+          context_before: "Acme Corp",
+          context_after: "Next bullet",
+        });
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.editor_selection).toEqual({
+        from: 10,
+        to: 23,
+        context_before: "Acme Corp",
+        context_after: "Next bullet",
+      });
+    });
+
     it("sets suggestion on success", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ success: true, suggestion: "Better text" }),
+        json: () =>
+          Promise.resolve({
+            success: true,
+            revisionId: "rev-1",
+            proposedText: "Better text",
+            targetUnit: { text: "original text", label: "Experience > bullet 1" },
+            canApply: true,
+          }),
       });
 
       const { result } = renderHook(() => useEditorAssist("thread-123"));
@@ -73,12 +108,14 @@ describe("useEditorAssist", () => {
         await result.current.requestSuggestion("improve", "original text");
       });
 
-      expect(result.current.suggestion).toEqual({
+      expect(result.current.suggestion).toEqual(expect.objectContaining({
         success: true,
         original: "original text",
         suggestion: "Better text",
         action: "improve",
-      });
+        revisionId: "rev-1",
+        canApply: true,
+      }));
       expect(result.current.isLoading).toBe(false);
       expect(result.current.error).toBeNull();
     });
@@ -96,7 +133,7 @@ describe("useEditorAssist", () => {
       });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.instructions).toBe("make it shorter");
+      expect(body.user_message).toBe("make it shorter");
     });
 
     it("sets error on API failure", async () => {
@@ -204,7 +241,13 @@ describe("useEditorAssist", () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () =>
-          Promise.resolve({ success: true, suggestion: "Chat reply", cache_hit: true }),
+          Promise.resolve({
+            success: true,
+            proposedText: "Chat reply",
+            revisionId: "revision-1",
+            canApply: true,
+            verification: { passed: true, summary: "Verification passed." },
+          }),
       });
 
       const { result } = renderHook(() => useEditorAssist("thread-123"));
@@ -222,16 +265,23 @@ describe("useEditorAssist", () => {
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.selected_text).toBe("selected");
       expect(body.user_message).toBe("make it better");
+      expect(body.action).toBe("custom");
       expect(body.chat_history).toEqual(history);
 
-      expect(returnValue).toEqual({ suggestion: "Chat reply", cacheHit: true });
+      expect(returnValue).toEqual(expect.objectContaining({
+        suggestion: "Chat reply",
+        cacheHit: false,
+        revisionId: "revision-1",
+        canApply: true,
+      }));
       // Also sets as current suggestion for apply flow
-      expect(result.current.suggestion).toEqual({
+      expect(result.current.suggestion).toEqual(expect.objectContaining({
         success: true,
         original: "selected",
         suggestion: "Chat reply",
         action: "custom",
-      });
+        revisionId: "revision-1",
+      }));
     });
 
     it("returns null on error", async () => {
@@ -313,17 +363,62 @@ describe("useEditorAssist", () => {
     });
   });
 
+  describe("applyRevision", () => {
+    it("calls /api/resume apply with revision id", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true, resumeHtml: "<h1>Updated</h1>" }),
+      });
+
+      const { result } = renderHook(() => useEditorAssist("thread-123"));
+
+      let returnValue: any;
+      await act(async () => {
+        returnValue = await result.current.applyRevision("revision-1", true);
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/resume/documents/thread-123/apply",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            revision_id: "revision-1",
+            override_verification: true,
+          }),
+        })
+      );
+      expect(returnValue.resumeHtml).toBe("<h1>Updated</h1>");
+    });
+
+    it("sets error when apply fails", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: false, error: "Patch mismatch" }),
+      });
+
+      const { result } = renderHook(() => useEditorAssist("thread-123"));
+
+      let returnValue: any;
+      await act(async () => {
+        returnValue = await result.current.applyRevision("revision-1");
+      });
+      expect(returnValue).toBeNull();
+      expect(result.current.error).toBe("Patch mismatch");
+    });
+  });
+
   describe("syncEditor", () => {
     it("calls /editor/sync with HTML and tracking data", async () => {
       mockFetch.mockResolvedValueOnce({ ok: true });
 
       const { result } = renderHook(() => useEditorAssist("thread-123"));
 
+      let synced: boolean | undefined;
       await act(async () => {
-        result.current.syncEditor("<h1>Resume</h1>", "old text", "new text", "make it better");
-        await new Promise((r) => setTimeout(r, 0));
+        synced = await result.current.syncEditor("<h1>Resume</h1>", "old text", "new text", "make it better");
       });
 
+      expect(synced).toBe(true);
       expect(mockFetch).toHaveBeenCalledWith(
         "/api/optimize/thread-123/editor/sync",
         expect.objectContaining({
@@ -344,8 +439,7 @@ describe("useEditorAssist", () => {
       const { result } = renderHook(() => useEditorAssist("thread-123"));
 
       await act(async () => {
-        result.current.syncEditor("<h1>Resume</h1>");
-        await new Promise((r) => setTimeout(r, 0));
+        await result.current.syncEditor("<h1>Resume</h1>");
       });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
@@ -354,13 +448,15 @@ describe("useEditorAssist", () => {
       expect(body.user_message).toBe("");
     });
 
-    it("does not call fetch when threadId is null", () => {
+    it("does not call fetch when threadId is null", async () => {
       const { result } = renderHook(() => useEditorAssist(null));
 
-      act(() => {
-        result.current.syncEditor("<h1>Resume</h1>");
+      let synced: boolean | undefined;
+      await act(async () => {
+        synced = await result.current.syncEditor("<h1>Resume</h1>");
       });
 
+      expect(synced).toBe(false);
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
@@ -395,20 +491,18 @@ describe("useEditorAssist", () => {
       global.AbortController = originalAbortController;
     });
 
-    it("ignores fetch errors silently", async () => {
+    it("sets error and returns false when sync fails", async () => {
       mockFetch.mockRejectedValueOnce(new Error("Sync failed"));
 
       const { result } = renderHook(() => useEditorAssist("thread-123"));
 
-      // Should not throw
+      let synced: boolean | undefined;
       await act(async () => {
-        result.current.syncEditor("<h1>Resume</h1>");
-        // Wait for the rejection to be handled
-        await new Promise((r) => setTimeout(r, 10));
+        synced = await result.current.syncEditor("<h1>Resume</h1>");
       });
 
-      // No error state set (fire and forget)
-      expect(result.current.error).toBeNull();
+      expect(synced).toBe(false);
+      expect(result.current.error).toBe("Sync failed");
     });
   });
 });

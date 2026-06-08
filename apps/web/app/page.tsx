@@ -315,7 +315,7 @@ export default function Home() {
                 Demo App &mdash; Built by Vicki | Not for commercial use
               </p>
               <ul className="space-y-0.5 text-amber-800">
-                <li><strong>No server-side storage.</strong> All data stays in your browser and is never saved on our servers.</li>
+                <li><strong>Temporary edit workspaces.</strong> AI edit diff/undo uses short-lived server workspaces; avoid entering sensitive PII.</li>
                 <li><strong>Tracing enabled.</strong> We use LangSmith for observability. Avoid entering sensitive PII (SSN, financial info, etc.).</li>
                 <li><strong>Daily usage limit.</strong> Token costs are on me, so there&apos;s a cap per day.</li>
               </ul>

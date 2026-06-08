@@ -41,7 +41,7 @@ Download your tailored resume as PDF, DOCX, or TXT. Get an ATS compatibility sco
 
 ## Privacy by Design
 
-Resumes contain personal addresses, phone numbers, and other sensitive contact information. To protect user privacy, **we do not store any data on the server**. All workflow state is kept in-memory (MemorySaver) and discarded when the session ends. User preferences and edits persist only in the browser's localStorage.
+Resumes contain personal addresses, phone numbers, and other sensitive contact information. To protect user privacy, workflow state is kept in-memory by default and user preferences persist only in the browser's localStorage. The structured resume editor creates temporary server-side workspaces for accepted AI edits so it can verify scoped changes and support diff/undo; these workspaces are stored under the OS temp directory by default and are cleaned up automatically after the configured retention window (`RESUME_WORKSPACE_TTL_SECONDS`, default 24 hours). Set `RESUME_WORKSPACE_DIR` only to a protected, non-shared location.
 
 LangSmith tracing is enabled for quality and debugging purposes. If you are entering real personal information, be aware that traced data may be retained by the tracing provider.
 
@@ -330,17 +330,54 @@ cd apps/api
 python -m evals.run_discovery_tuning --iterate
 ```
 
-## Testing
+## Automatic Gates
+
+These gates replace manual QA for the critical resume editing paths. Run them before merging changes that touch drafting,
+editor assist, resume workspaces, workflow state, or privacy/retention behavior.
 
 ```bash
-# Frontend (244 tests)
-cd apps/web && npx vitest run
+# Backend business logic: parser/map/apply/diff/undo, stale workspace refresh,
+# selection-to-unit resolution, and editor API compatibility.
+apps/api/.venv/bin/python -m pytest apps/api/tests/test_resume_workspace.py apps/api/tests/test_editor.py -q
 
-# Backend (690 tests)
-cd apps/api && python -m pytest
+# Backend lint for the structured resume editor surface.
+apps/api/.venv/bin/python -m ruff check \
+  apps/api/services/resume_workspace.py \
+  apps/api/routers/resume.py \
+  apps/api/workflow/nodes/editor.py \
+  apps/api/tests/test_resume_workspace.py
 
-# E2E
-cd apps/web && npx playwright test
+# Frontend behavior: hook payloads, sync-before-apply, plan/verification UI,
+# and editor content handling.
+pnpm --filter web test:run \
+  app/hooks/useEditorAssist.test.ts \
+  app/components/optimize/ResumeEditor.test.tsx
+
+# Frontend type safety.
+pnpm --filter web exec tsc --noEmit
+
+# Browser E2E: actual /optimize editor workflow with mocked backend responses.
+# Covers unsynced manual edits, duplicate bullet targeting, multi-turn chat context,
+# server-side apply, and final Tiptap DOM assertions.
+pnpm --filter web test:e2e e2e/tests/resume-editor-surgical.spec.ts
+```
+
+The real-LLM gate is opt-in because it consumes API credits and requires secrets:
+
+```bash
+RUN_REAL_LLM_TESTS=1 apps/api/.venv/bin/python -m pytest \
+  apps/api/tests/integration/test_resume_surgical_real_llm.py -q
+```
+
+CI runs the broad backend/frontend suites and the surgical browser E2E gate. The real-LLM gate is intentionally local/manual
+unless CI is explicitly configured with the required LLM secrets.
+
+For broader regression sweeps:
+
+```bash
+pnpm --filter web exec vitest run
+cd apps/api && python -m pytest tests/ -q
+pnpm --filter web test:e2e
 ```
 
 ## Tech Stack

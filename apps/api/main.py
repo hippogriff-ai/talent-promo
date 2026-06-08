@@ -27,7 +27,7 @@ if os.getenv("LANGSMITH_API_KEY"):
 
 from fastapi import FastAPI
 
-from routers import documents, optimize, preferences, ratings
+from routers import documents, optimize, preferences, ratings, resume
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ app = FastAPI(
 # Include routers
 app.include_router(documents.router)
 app.include_router(optimize.router)  # LangGraph resume optimization workflow
+app.include_router(resume.router)  # Structured resume editing workspaces
 app.include_router(preferences.router)  # User preferences (anonymous)
 app.include_router(ratings.router)  # Draft ratings (anonymous)
 

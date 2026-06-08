@@ -19,7 +19,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,8 @@ def parse_resume_html(document_id: str, html_content: str) -> dict[str, Any]:
         elif name in {"ul", "ol"}:
             add_list(node)
         elif name in {"div", "section", "article"}:
-            nested = parse_resume_html(f"{document_id}.nested", str(node))
+            nested_html = "".join(str(child) for child in node.children)
+            nested = parse_resume_html(f"{document_id}.nested", nested_html)
             for section in nested["sections"]:
                 if section["id"] == "header":
                     for child in section.get("children", []):
@@ -460,6 +461,51 @@ def render_html(document: dict[str, Any]) -> str:
         flush_items()
 
     return "\n".join(parts)
+
+
+def replace_unit_text_in_html(
+    source_html: str,
+    document: dict[str, Any],
+    target_unit_id: str,
+    replacement_text: str,
+) -> str:
+    """Patch one text unit in source HTML while preserving untouched markup."""
+    soup = BeautifulSoup(source_html or "", "html.parser")
+    editable_nodes = [
+        node
+        for node in soup.find_all(["h1", "p", "li"])
+        if normalize_text(node.get_text(" ", strip=True))
+    ]
+    ordered_units = [unit for unit in text_units(document) if unit.get("text")]
+    target_index = next(
+        (index for index, unit in enumerate(ordered_units) if unit["id"] == target_unit_id),
+        None,
+    )
+    if target_index is None:
+        raise PatchMismatchError("Target unit does not exist", "", target_unit_id)
+    if target_index >= len(editable_nodes):
+        raise PatchMismatchError(
+            "Could not map target unit to source HTML",
+            unit_text(ordered_units[target_index]),
+            target_unit_id,
+        )
+
+    target_unit = ordered_units[target_index]
+    target_node = editable_nodes[target_index]
+    node_current = normalize_for_match(target_node.get_text(" ", strip=True))
+    unit_current = normalize_for_match(unit_text(target_unit))
+    if node_current != unit_current:
+        ratio = SequenceMatcher(None, unit_current, node_current).ratio()
+        if ratio < 0.92:
+            raise PatchMismatchError(
+                f"Source HTML target did not match structured unit; normalized similarity was {ratio:.2f}",
+                unit_text(target_unit),
+                target_unit_id,
+            )
+
+    target_node.clear()
+    target_node.append(NavigableString(normalize_text(replacement_text)))
+    return str(soup)
 
 
 def parse_patch(patch: str) -> PatchParts:
@@ -948,7 +994,7 @@ class ResumeWorkspaceService:
         self.ensure_git_repo(document_id)
 
         document = parse_resume_html(document_id, html_content)
-        self.write_workspace_files(document_id, document, progress)
+        self.write_workspace_files(document_id, document, progress, source_html=html_content)
         self.commit(document_id, "Refresh resume workspace from synced editor HTML")
         return self.load_document(document_id)
 
@@ -959,11 +1005,16 @@ class ResumeWorkspaceService:
             document = self.load_document(document_id)
             if html_content:
                 incoming_hash = html_hash(html_content)
+                source_path = workspace / "resume.html"
+                if document.get("sourceHtmlHash") == incoming_hash and not source_path.exists():
+                    self.write_workspace_files(document_id, document, source_html=html_content)
+                    self.commit(document_id, "Store resume source HTML")
+                    return self.load_document(document_id)
                 if document.get("sourceHtmlHash") != incoming_hash:
-                    rendered_hash = html_hash(render_html(document))
-                    if rendered_hash == incoming_hash:
+                    stored_hash = html_hash(self.load_source_html(document_id, document))
+                    if stored_hash == incoming_hash:
                         document["sourceHtmlHash"] = incoming_hash
-                        self.write_workspace_files(document_id, document)
+                        self.write_workspace_files(document_id, document, source_html=html_content)
                         self.commit(document_id, "Update resume workspace source hash")
                         return self.load_document(document_id)
                     return self.refresh_document_from_html(
@@ -987,7 +1038,21 @@ class ResumeWorkspaceService:
             raise ResumeWorkspaceError("Resume document has not been initialized")
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def write_workspace_files(self, document_id: str, document: dict[str, Any], progress: str | None = None) -> None:
+    def load_source_html(self, document_id: str, document: dict[str, Any] | None = None) -> str:
+        path = self.workspace_dir(document_id) / "resume.html"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        if document is None:
+            document = self.load_document(document_id)
+        return render_html(document)
+
+    def write_workspace_files(
+        self,
+        document_id: str,
+        document: dict[str, Any],
+        progress: str | None = None,
+        source_html: str | None = None,
+    ) -> None:
         workspace = self.workspace_dir(document_id)
         workspace.mkdir(parents=True, exist_ok=True)
         (workspace / ".gitignore").write_text("pending/\n", encoding="utf-8")
@@ -996,6 +1061,8 @@ class ResumeWorkspaceService:
             encoding="utf-8",
         )
         (workspace / "resume.md").write_text(render_markdown(document), encoding="utf-8")
+        if source_html is not None:
+            (workspace / "resume.html").write_text(source_html, encoding="utf-8")
         if progress is not None:
             (workspace / "progress.md").write_text(progress.strip() + "\n", encoding="utf-8")
 
@@ -1022,6 +1089,8 @@ class ResumeWorkspaceService:
     def commit(self, document_id: str, message: str) -> dict[str, Any] | None:
         self.ensure_git_repo(document_id)
         paths = [".gitignore", "resume.json", "resume.md", "progress.md"]
+        if (self.workspace_dir(document_id) / "resume.html").exists():
+            paths.append("resume.html")
         if (self.workspace_dir(document_id) / "accepted_edits.json").exists():
             paths.append("accepted_edits.json")
         self.run_git(document_id, ["add", *paths])
@@ -1088,6 +1157,7 @@ class ResumeWorkspaceService:
         allow_verification_override: bool = False,
     ) -> dict[str, Any]:
         document_before = self.load_document(document_id)
+        source_html_before = self.load_source_html(document_id, document_before)
         revision = self.load_pending_revision(document_id, revision_id)
         expected_revision_id = revision.get("documentRevisionId")
         target_unit_id = revision["targetUnit"]["id"]
@@ -1112,8 +1182,25 @@ class ResumeWorkspaceService:
                 target_unit_id,
             )
 
-        rendered_html = render_html(document_after)
+        rendered_html = replace_unit_text_in_html(
+            source_html_before,
+            before_snapshot,
+            target_unit_id,
+            unit_text(find_unit(document_after, target_unit_id) or {}),
+        )
+        patched_revision_id = document_after["revisionId"]
+        document_after = parse_resume_html(document_id, rendered_html)
+        document_after["createdAt"] = before_snapshot.get("createdAt", document_after["createdAt"])
+        document_after["revisionId"] = patched_revision_id
+        document_after["updatedAt"] = utc_now()
         document_after["sourceHtmlHash"] = html_hash(rendered_html)
+        changed = changed_text_units(before_snapshot, document_after)
+        if changed != [target_unit_id]:
+            raise PatchMismatchError(
+                "Rendered source HTML changed units outside the resolved target",
+                unit_text(find_unit(before_snapshot, target_unit_id) or {}),
+                target_unit_id,
+            )
         accepted_edits = self.load_accepted_edits(document_id)
         accepted_edits.append(
             {
@@ -1124,7 +1211,7 @@ class ResumeWorkspaceService:
                 "appliedAt": utc_now(),
             }
         )
-        self.write_workspace_files(document_id, document_after)
+        self.write_workspace_files(document_id, document_after, source_html=rendered_html)
         self.write_progress_for_revision(document_id, revision, "applied")
         self.write_accepted_edits(document_id, accepted_edits)
         commit_meta = self.commit(document_id, f"Apply resume edit to {target_unit_id}")
@@ -1154,6 +1241,8 @@ class ResumeWorkspaceService:
             raise ResumeWorkspaceError("No accepted edit is available to undo")
 
         document = self.load_document(document_id)
+        source_html_before = self.load_source_html(document_id, document)
+        before_snapshot = json.loads(json.dumps(document))
         target_unit_id = edit_to_undo["targetUnitId"]
         target = find_unit(document, target_unit_id)
         if not target or target.get("kind") not in TEXT_UNIT_KINDS:
@@ -1172,11 +1261,33 @@ class ResumeWorkspaceService:
 
         document["revisionId"] = f"rev_{uuid.uuid4().hex[:12]}"
         document["updatedAt"] = utc_now()
-        rendered_html = render_html(document)
+        rendered_html = replace_unit_text_in_html(
+            source_html_before,
+            before_snapshot,
+            target_unit_id,
+            edit_to_undo["originalText"],
+        )
+        undo_revision_id = document["revisionId"]
+        document = parse_resume_html(document_id, rendered_html)
+        document["createdAt"] = before_snapshot.get("createdAt", document["createdAt"])
+        document["revisionId"] = undo_revision_id
+        document["updatedAt"] = utc_now()
         document["sourceHtmlHash"] = html_hash(rendered_html)
+        changed = changed_text_units(before_snapshot, document)
+        if changed != [target_unit_id]:
+            raise PatchMismatchError(
+                "Rendered source HTML undo changed units outside the resolved target",
+                unit_text(find_unit(before_snapshot, target_unit_id) or {}),
+                target_unit_id,
+            )
         edit_to_undo["undoneAt"] = utc_now()
         edit_to_undo["undoRevisionId"] = document["revisionId"]
-        self.write_workspace_files(document_id, document, "Undid latest accepted resume edit.")
+        self.write_workspace_files(
+            document_id,
+            document,
+            "Undid latest accepted resume edit.",
+            source_html=rendered_html,
+        )
         self.write_accepted_edits(document_id, accepted_edits)
         commit_meta = self.commit(document_id, f"Undo resume edit to {target_unit_id}")
         commit_sha = self.run_git(document_id, ["rev-parse", "HEAD"]).stdout.strip()

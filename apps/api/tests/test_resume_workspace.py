@@ -41,6 +41,25 @@ SAMPLE_HTML = """
 <p><strong>Languages:</strong> Python, TypeScript | <strong>Cloud:</strong> AWS</p>
 """
 
+RICH_HTML = """
+<section class="resume-shell" data-template="compact">
+<h1><span class="name">Jane Doe</span></h1>
+<p><a href="mailto:jane@example.com">jane@example.com</a> • <span data-field="location">New York</span></p>
+<h2>Professional Summary</h2>
+<p><em>Senior engineer</em> with ten years of platform experience.</p>
+<h2>Experience</h2>
+<h3>Staff Engineer — Platform</h3>
+<p><strong>Acme Corp</strong> | <em>2021 - Present</em></p>
+<ul class="experience-list">
+<li data-unit="first"><span>Built internal deployment platform for engineering teams.</span></li>
+<li><a href="https://status.example.com">Improved API reliability</a> by leading incident reviews and rollout
+automation.</li>
+</ul>
+<h2>Skills</h2>
+<p><strong>Languages:</strong> Python, TypeScript | <strong>Cloud:</strong> AWS</p>
+</section>
+"""
+
 DUPLICATE_BULLET_HTML = """
 <h1>Jane Doe</h1>
 <p>jane@example.com • New York • LinkedIn</p>
@@ -172,6 +191,47 @@ def test_workspace_commit_diff_and_undo(tmp_path: Path):
 
     undone = service.undo("doc-1")
     assert "Built internal deployment platform for engineering teams." in undone["resumeHtml"]
+
+
+def test_apply_preserves_untouched_source_html_markup(tmp_path: Path):
+    if not shutil.which("git"):
+        pytest.skip("git is required for workspace versioning")
+
+    service = ResumeWorkspaceService(tmp_path)
+    document = service.ensure_document("doc-1", RICH_HTML)
+    target = resolve_target_unit(document, selected_text="Built internal deployment platform for engineering teams.")
+    proposed = "Built deployment platform for 40 engineering teams."
+    revision = {
+        "revisionId": "revision-rich-markup",
+        "targetUnit": {"id": target["id"], "text": unit_text(target)},
+        "editPlan": {
+            "goal": "improve",
+            "targetLabel": "Experience > Acme > Bullet 1",
+            "todos": [],
+        },
+        "patch": build_patch(target["id"], unit_text(target), proposed),
+        "proposedText": proposed,
+        "verification": verify_revision(unit_text(target), proposed, "improve"),
+        "userMessage": "improve",
+        "documentRevisionId": document["revisionId"],
+    }
+    service.save_pending_revision("doc-1", revision)
+
+    applied = service.apply_pending_revision("doc-1", "revision-rich-markup")
+
+    html = applied["resumeHtml"]
+    assert proposed in html
+    assert 'class="resume-shell"' in html
+    assert 'data-template="compact"' in html
+    assert '<a href="mailto:jane@example.com">jane@example.com</a>' in html
+    assert '<span data-field="location">New York</span>' in html
+    assert "<em>Senior engineer</em>" in html
+    assert "<strong>Acme Corp</strong>" in html
+    assert "<em>2021 - Present</em>" in html
+    assert 'class="experience-list"' in html
+    assert 'data-unit="first"' in html
+    assert '<a href="https://status.example.com">Improved API reliability</a>' in html
+    assert "<strong>Languages:</strong>" in html
 
 
 def test_workspace_reparses_when_source_html_changes(tmp_path: Path):
